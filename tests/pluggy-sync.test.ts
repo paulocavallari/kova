@@ -768,3 +768,93 @@ test('a stale configuration during post-probe collection publishes no error on t
   assert.equal(current.accounts.some((x) => x.pluggy?.apiId === 'a'), false);
   assert.equal(current.accounts.some((x) => x.pluggy?.apiId === 'b'), true);
 });
+
+test('bills cache is collected for CREDIT accounts and transactions survive bills failures', async () => {
+  const net = makeNet({
+    'http://a.test': api('a', [{
+      id: 'ia', name: 'Banco A', accounts: [{
+        account: card('card1', 0, 'BRL', 'Cartão'),
+        txs: [tx('buy', 10, '2026-11-02', { type: 'DEBIT', description: 'Compra' })],
+        bills: [
+          { id: 'b1', dueDate: '2026-11-10', totalAmount: 100.5, totalAmountCurrencyCode: 'BRL' },
+          { id: 'b2', dueDate: '2026-12-10', totalAmount: 20, totalAmountCurrencyCode: 'BRL' },
+        ],
+      }],
+    }]),
+  });
+  let s = mkState([conn('a', 'http://a.test', ['ia'])]);
+  s = (await runAll(s, { now, fetchImpl: net.fetchImpl })).state;
+  const acc = s.accounts.find((a) => a.pluggy?.accountId === 'card1')!;
+  assert.equal(acc.pluggy?.bills?.status, 'fresh');
+  assert.deepEqual(acc.pluggy?.bills?.items.map((b) => b.id), ['b1', 'b2']);
+  assert.equal(acc.pluggy?.bills?.items[0].amountCents, 10050);
+  assert.equal(s.txs.some((t) => t.pluggy?.txId === 'buy'), true);
+
+  // failure preserves the previous cache and marks it stale, without blocking transactions
+  net.api('http://a.test').items[0].accounts[0].billsStatus = 500;
+  s = (await runAll(s, { now, fetchImpl: net.fetchImpl })).state;
+  const stale = s.accounts.find((a) => a.pluggy?.accountId === 'card1')!;
+  assert.equal(stale.pluggy?.bills?.status, 'stale');
+  assert.deepEqual(stale.pluggy?.bills?.items.map((b) => b.id), ['b1', 'b2']);
+  assert.equal(s.txs.some((t) => t.pluggy?.txId === 'buy'), true);
+
+  // manual sync collects bills even with a recent lastSyncAt
+  const manualState = { ...s, pluggy: s.pluggy!.map((c) => ({ ...c, lastSyncAt: iso(NOW - 3600_000) })) };
+  net.api('http://a.test').items[0].accounts[0].billsStatus = undefined;
+  const manual = await runOne(manualState, 'a', { now, fetchImpl: net.fetchImpl });
+  assert.equal(manual.state.accounts.find((a) => a.pluggy?.accountId === 'card1')?.pluggy?.bills?.status, 'fresh');
+});
+
+test('a bills failure on a first sync still imports the card and its transactions', async () => {
+  const net = makeNet({
+    'http://a.test': api('a', [{
+      id: 'ia', name: 'Banco A', accounts: [{
+        account: card('card1', 0, 'BRL', 'Cartão'),
+        txs: [tx('buy', 10, '2026-11-02', { type: 'DEBIT', description: 'Compra' })],
+        billsStatus: 500,
+      }],
+    }]),
+  });
+  const s = (await runAll(mkState([conn('a', 'http://a.test', ['ia'])]), { now, fetchImpl: net.fetchImpl })).state;
+  const acc = s.accounts.find((a) => a.pluggy?.accountId === 'card1')!;
+  assert.equal(acc.pluggy?.bills?.status, 'error');
+  assert.equal(acc.pluggy?.bills?.items.length, 0);
+  assert.equal(s.txs.some((t) => t.pluggy?.txId === 'buy'), true);
+});
+
+test('an invalid bills batch preserves the prior cache as stale and does not block transactions', async () => {
+  const net = makeNet({
+    'http://a.test': api('a', [{
+      id: 'ia', name: 'Banco A', accounts: [{
+        account: card('card1', 0, 'BRL', 'Cartão'),
+        txs: [],
+        bills: [{ id: 'valid', dueDate: '2026-11-10', totalAmount: 100, totalAmountCurrencyCode: 'BRL' }],
+      }],
+    }]),
+  });
+  let s = mkState([conn('a', 'http://a.test', ['ia'])]);
+  s = (await runAll(s, { now, fetchImpl: net.fetchImpl })).state;
+  assert.equal(s.accounts.find((a) => a.pluggy?.accountId === 'card1')?.pluggy?.bills?.status, 'fresh');
+  net.api('http://a.test').items[0].accounts[0].bills = [{ id: 'bad-date', dueDate: '2026-11-10garbage', totalAmount: 200, totalAmountCurrencyCode: 'BRL' }];
+  const after = (await runAll(s, { now, fetchImpl: net.fetchImpl })).state;
+  const cache = after.accounts.find((a) => a.pluggy?.accountId === 'card1')?.pluggy?.bills;
+  assert.equal(cache?.status, 'stale');
+  assert.deepEqual(cache?.items.map((b) => b.id), ['valid']);
+  assert.equal(after.txs.length, s.txs.length);
+});
+
+test('documental bill datetime without timezone is accepted and cached fresh', async () => {
+  const net = makeNet({
+    'http://a.test': api('a', [{
+      id: 'ia', name: 'Banco A', accounts: [{
+        account: card('card1', 0, 'BRL', 'Cartão'),
+        txs: [],
+        bills: [{ id: 'doc', dueDate: '2023-07-20T00:00:00', totalAmount: 10.25, totalAmountCurrencyCode: 'BRL' }],
+      }],
+    }]),
+  });
+  const s = (await runAll(mkState([conn('a', 'http://a.test', ['ia'])]), { now, fetchImpl: net.fetchImpl })).state;
+  const cache = s.accounts.find((a) => a.pluggy?.accountId === 'card1')?.pluggy?.bills;
+  assert.equal(cache?.status, 'fresh');
+  assert.deepEqual(cache?.items.map((b) => ({ id: b.id, dueDate: b.dueDate, amountCents: b.amountCents })), [{ id: 'doc', dueDate: '2023-07-20', amountCents: 1025 }]);
+});

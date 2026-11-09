@@ -11,7 +11,18 @@ export interface Account {
   archived: boolean;
   order: number;
   note?: string;
-  pluggy?: { apiId: string; accountId: string; type: string; lastAutoName?: string; nameCustomized?: boolean };
+  pluggy?: { apiId: string; accountId: string; type: string; lastAutoName?: string; nameCustomized?: boolean; bills?: PluggyBillsCache };
+}
+export interface PluggyBill {
+  id: string;
+  dueDate: string;
+  amountCents: number;
+  currency: string;
+}
+export interface PluggyBillsCache {
+  items: PluggyBill[];
+  fetchedAt: string;
+  status: 'fresh' | 'stale' | 'error';
 }
 export interface Category {
   id: string;
@@ -89,6 +100,7 @@ export interface Settings {
   shortcutsOn?: boolean; // shortcut chips on Home + ⚡ in the editor (default on)
   haptics?: boolean; // vibrate on taps (default on)
   showTags?: boolean; // tags field in the transaction editor (default on)
+  monthlyCardView?: boolean; // cards by invoice due this month and monthly result (default on)
 }
 export interface State {
   version: 1;

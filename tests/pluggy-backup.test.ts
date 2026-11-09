@@ -101,3 +101,20 @@ test('backup round trip keeps Pluggy name metadata and still omits the secret', 
   assert.deepEqual(getState().accounts[0].pluggy, { apiId: 'a', accountId: 'bank1', type: 'BANK', lastAutoName: 'Banco A', nameCustomized: true });
   assert.equal(getState().pluggy?.[0].clientSecret, SECRET);
 });
+
+test('restore clears bill caches until a fresh sync', async () => {
+  const s = initialState('pt');
+  const state: State = {
+    ...s,
+    accounts: [{
+      id: 'pg-a-card1', name: 'Cartão', icon: 'cards', color: '#B57BFF', currency: 'BRL', initial: 0,
+      includeInTotal: true, archived: false, order: 0,
+      pluggy: { apiId: 'a', accountId: 'card1', type: 'CREDIT', bills: { status: 'fresh', fetchedAt: '2026-11-09T00:00:00.000Z', items: [{ id: 'b1', dueDate: '2026-11-10', amountCents: 1000, currency: 'BRL' }] } },
+    }],
+    pluggy: [conn('a')],
+  };
+  const json = await buildBackup(state);
+  replaceState(fixture([conn('a')]));
+  await restoreBackup(json);
+  assert.equal(getState().accounts[0].pluggy?.bills, undefined);
+});

@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import type { Account, PluggyConn, State, Transfer, Tx } from './types';
+import type { Account, PluggyBill, PluggyBillsCache, PluggyConn, State, Transfer, Tx } from './types';
+import { CURRENCIES } from './defaults';
 import { addDays, balances, fold, toBase } from './calc';
 export const PLUGGY_BASE_URL = 'https://api.pluggy.ai';
 const MAX_PAGES = 200;
@@ -44,9 +45,9 @@ const asRecord = (v: unknown, what: string): Record<string, unknown> => {
   return v as Record<string, unknown>;
 };
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
-const need = (ok: boolean, msg: string) => {
+function need(ok: boolean, msg: string): asserts ok {
   if (!ok) throw new PluggyError(msg);
-};
+}
 const resultsOf = (body: unknown, what: string): unknown[] => {
   const results = asRecord(body, what).results;
   if (!Array.isArray(results)) throw new PluggyError(`pluggy: ${what} without results`);
@@ -62,6 +63,18 @@ function baseUrlOf(conn: Pick<PluggyConn, 'baseUrl'>): string {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new PluggyError('pluggy: invalid base url');
   return raw;
+}
+function civilDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+function billCivilDate(value: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?Z?)?$/.exec(value);
+  if (!m || !civilDate(m[1])) return null;
+  if (m[2] !== undefined && (Number(m[2]) > 23 || Number(m[3]) > 59 || Number(m[4]) > 59)) return null;
+  return m[1];
 }
 function parseItem(raw: unknown): PluggyItem {
   const r = asRecord(raw, 'item');
@@ -211,6 +224,50 @@ export class PluggyClient {
       body = this.checked(await this.call(`${base}&page=${info.page + 1}`));
     }
     throw new PluggyError('pluggy: transactions pagination limit');
+  }
+  /** GET /bills?accountId=…: strict sequential pages, validated/deduped atomic batch. */
+  async bills(accountId: string): Promise<PluggyBill[]> {
+    need(!!accountId, 'pluggy: empty account id');
+    const out: PluggyBill[] = [];
+    const seen = new Map<string, string>();
+    const qs = new URLSearchParams({ accountId });
+    let expectedTotal: number | null = null;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const body = this.checked(await this.call(`/bills?${qs.toString()}&page=${page}`));
+      const r = asRecord(body, 'bills');
+      need(Number.isInteger(r.page) && r.page === page, 'pluggy: invalid bills page');
+      need(Number.isInteger(r.totalPages) && (r.totalPages as number) >= page, 'pluggy: invalid bills totalPages');
+      const totalPages = r.totalPages as number;
+      if (expectedTotal === null) {
+        need(totalPages <= MAX_PAGES, 'pluggy: invalid bills totalPages');
+        expectedTotal = totalPages;
+      } else {
+        need(totalPages === expectedTotal, 'pluggy: inconsistent bills totalPages');
+      }
+      const results = r.results;
+      need(Array.isArray(results), 'pluggy: bills without results');
+      for (const raw of results as unknown[]) {
+        const b = asRecord(raw, 'bill');
+        need(typeof b.id === 'string' && !!b.id, 'pluggy: invalid bill');
+        const dueDate = typeof b.dueDate === 'string' ? billCivilDate(b.dueDate) : null;
+        need(dueDate !== null, 'pluggy: invalid bill');
+        need(typeof b.totalAmount === 'number' && Number.isFinite(b.totalAmount), 'pluggy: invalid bill');
+        need(typeof b.totalAmountCurrencyCode === 'string' && CURRENCIES.includes(b.totalAmountCurrencyCode.toUpperCase()), 'pluggy: invalid bill');
+        const amountCents = Math.round((b.totalAmount as number) * 100);
+        need(Number.isSafeInteger(amountCents), 'pluggy: invalid bill');
+        const bill: PluggyBill = { id: b.id as string, dueDate, amountCents, currency: (b.totalAmountCurrencyCode as string).toUpperCase() };
+        const key = JSON.stringify(bill);
+        const prev = seen.get(bill.id);
+        if (prev !== undefined) {
+          need(prev === key, 'pluggy: conflicting bill id');
+          continue;
+        }
+        seen.set(bill.id, key);
+        out.push(bill);
+      }
+      if (page >= (expectedTotal as number)) return out;
+    }
+    throw new PluggyError('pluggy: bills pagination limit');
   }
   private async pagedTransactions(path: string): Promise<PluggyTx[]> {
     const out: PluggyTx[] = [];
@@ -487,10 +544,18 @@ interface SourceConfig {
   baseUrl: string;
   itemIds: string[];
 }
+interface BillResult {
+  apiId: string;
+  itemId: string;
+  accountId: string;
+  items?: PluggyBill[];
+  error?: string;
+}
 interface Collected {
   connId: string;
   source: SourceConfig;
   folders: Folder[];
+  bills: BillResult[];
   stamps: Record<string, string>;
   errors: string[];
 }
@@ -528,7 +593,8 @@ async function collectPluggy(conn: PluggyConn, opts: SyncOptions): Promise<Colle
   const folders: Folder[] = [];
   const stamps: Record<string, string> = {};
   const errors: string[] = [];
-  const base = { connId: conn.id, source: sourceConfig(conn), folders, stamps, errors };
+  const bills: BillResult[] = [];
+  const base = { connId: conn.id, source: sourceConfig(conn), folders, bills, stamps, errors };
   if (!conn.enabled || !conn.clientId || !conn.clientSecret || !conn.itemIds.length) {
     errors.push('pluggy: incomplete connection');
     return base;
@@ -556,6 +622,13 @@ async function collectPluggy(conn: PluggyConn, opts: SyncOptions): Promise<Colle
           itemOk = false;
           errors.push(safeError(e, conn.clientSecret));
         }
+        if (acc.type === 'CREDIT') {
+          try {
+            bills.push({ apiId: conn.id, itemId, accountId: acc.id, items: await client.bills(acc.id) });
+          } catch (e) {
+            bills.push({ apiId: conn.id, itemId, accountId: acc.id, error: safeError(e, conn.clientSecret) });
+          }
+        }
       }
       folders.push(...itemFolders);
       const stamp = itemStamp(item);
@@ -565,6 +638,44 @@ async function collectPluggy(conn: PluggyConn, opts: SyncOptions): Promise<Colle
     }
   }
   return base;
+}
+function applyBills(next: State, conn: PluggyConn, collected: Collected, now: number): State {
+  const allowed = new Set(conn.itemIds);
+  let accounts = next.accounts;
+  const handled = new Set<string>();
+  for (const result of collected.bills) {
+    if (!allowed.has(result.itemId)) continue;
+    const account = accounts.find((a) => a.pluggy?.apiId === conn.id && a.pluggy.accountId === result.accountId);
+    if (!account) continue;
+    handled.add(account.id);
+    const old = account.pluggy?.bills;
+    const cache: PluggyBillsCache = result.items
+      ? { items: result.items, fetchedAt: new Date(now).toISOString(), status: 'fresh' }
+      : { items: old?.items ?? [], fetchedAt: old?.fetchedAt ?? '', status: old ? 'stale' : 'error' };
+    accounts = accounts.map((a) => (a.id === account.id ? { ...a, pluggy: { ...a.pluggy!, bills: cache } } : a));
+  }
+  if (collected.errors.length || collected.bills.some((b) => b.error)) {
+    accounts = accounts.map((a) => {
+      const pg = a.pluggy;
+      if (!pg || pg.apiId !== conn.id || pg.type !== 'CREDIT' || handled.has(a.id)) return a;
+      const old = pg.bills;
+      const cache: PluggyBillsCache = old ? { ...old, status: 'stale' } : { items: [], fetchedAt: '', status: 'error' };
+      return { ...a, pluggy: { ...pg, bills: cache } };
+    });
+  }
+  return accounts === next.accounts ? next : { ...next, accounts };
+}
+/** Removes cached bills for a connection until the next successful sync. */
+export function invalidatePluggyBills(state: State, apiId: string): State {
+  return {
+    ...state,
+    accounts: state.accounts.map((a) => {
+      if (a.pluggy?.apiId !== apiId || !a.pluggy.bills) return a;
+      const pluggy = { ...a.pluggy };
+      delete pluggy.bills;
+      return { ...a, pluggy };
+    }),
+  };
 }
 /** Applies collected data to the latest State, preserving local edits and other sync results. */
 export function commitPluggy(current: State, collected: Collected, now: number): State {
@@ -579,6 +690,7 @@ export function commitPluggy(current: State, collected: Collected, now: number):
     next = applyFetched(next, conn, folders, now);
     added = Math.max(0, next.txs.length - before);
   }
+  if (collected.bills.length || collected.errors.length) next = applyBills(next, conn, collected, now);
   const currentStamps = next.pluggy?.find((c) => c.id === conn.id)?.itemUpdatedAt ?? {};
   const stamps = Object.fromEntries(Object.entries(collected.stamps).filter(([id]) => allowed.has(id)));
   const ok = collected.errors.length === 0;

@@ -15,6 +15,9 @@ import { upcomingBills } from '../lib/reminders';
 import { ShortcutStrip } from '../components/Shortcuts';
 import { PendingCard } from '../components/NotifUI';
 import { PluggyHomeShortcut } from '../components/PluggyUI';
+import { MonthlyToggle } from '../components/MonthlyToggle';
+import { monthlyProjection } from '../lib/monthly';
+import { useToday } from '../lib/useToday';
 
 export function Home() {
   const s = useStore();
@@ -109,6 +112,13 @@ export function Home() {
 
   const balanceV = acc ? bal.get(acc.id) ?? 0 : total;
   const balanceCur = acc ? acc.currency : base;
+  const day = useToday();
+  const monthlyOn = s.settings.monthlyCardView !== false;
+  const monthly = useMemo(() => monthlyProjection(s, accId || undefined, day), [s, accId, day]);
+  const shownIncome = monthlyOn ? monthly.income : month.i;
+  const shownExpense = monthlyOn ? monthly.expense : month.e;
+  const shownRate = shownIncome ? Math.round(((shownIncome - shownExpense) / shownIncome) * 100) : null;
+  const shownCurrency = monthlyOn ? monthly.currency : base;
   const selRow = rows.find((r) => r.id === sel);
   const monthQ = { gran: 'month', start: month.m.start, end: month.m.end, ...(accId ? { acc: accId } : {}) };
 
@@ -119,12 +129,14 @@ export function Home() {
           <div className="paper flush">
             {[{ id: '', name: t('total'), icon: 'wallet', color: '#5B3DF5', currency: base }, ...s.accounts.filter((a) => !a.archived).sort((a, b) => a.order - b.order)].map((a) => {
               const v = a.id ? bal.get(a.id) ?? 0 : total;
+              const option = monthlyOn ? monthlyProjection(s, a.id || undefined, day) : null;
               return (
                 <button key={a.id || 'total'} className="item" onClick={() => { setAccId(a.id); setSel(null); close(); }}>
                   <Bubble icon={a.icon} color={a.color} size={40} />
                   <div className="grow">
                     <div className="t">{a.name}</div>
-                    <div className="s">{hide ? '••••••' : money(v, a.currency, locale)}</div>
+                    <div className="s">{hide ? '••••••' : option ? (option.complete ? money(option.net, option.currency, locale) : t('monthlyIncomplete')) : money(v, a.currency, locale)}</div>
+                    {option && <div className="small muted">{t('monthlyResult')}</div>}
                   </div>
                   {accId === a.id && <PiCheckBold size={20} />}
                 </button>
@@ -149,24 +161,26 @@ export function Home() {
             {hide ? <PiEyeSlashBold /> : <PiEyeBold />}
           </button>
         </div>
-        <div className="lbl">{acc ? t('balance') : t('totalBalance')}</div>
-        <div className={'big' + (hide ? ' hidden' : '')}>{hide ? '••••••' : money(balanceV, balanceCur, locale)}</div>
-        {acc && acc.currency !== base && !hide && <div className="sub">≈ {money(toBase(s, balanceV, acc.currency), base, locale)}</div>}
+        <div className="lbl">{monthlyOn ? t('monthlyResult') : acc ? t('balance') : t('totalBalance')}</div>
+        <div className={'big' + (hide ? ' hidden' : '')}>{hide ? '••••••' : money(monthlyOn ? monthly.net : balanceV, monthlyOn ? monthly.currency : balanceCur, locale)}</div>
+        {monthlyOn && !hide && !monthly.complete && <div className="sub">{monthly.stale && monthly.staleAt ? t('monthlyStaleNotice', { d: new Date(monthly.staleAt).toLocaleString(locale) }) : t('monthlyIncomplete')}</div>}
+        {!monthlyOn && acc && acc.currency !== base && !hide && <div className="sub">≈ {money(toBase(s, balanceV, acc.currency), base, locale)}</div>}
         <div className="tiles">
           <button className="glass" onClick={() => goTx({ kind: 'income', ...monthQ })}>
             <span><i><PiArrowDownLeftBold /></i>{t('income')}</span>
-            <b>{money(month.i, base, locale)}</b>
+            <b>{monthlyOn && hide ? '••••••' : money(shownIncome, shownCurrency, locale)}</b>
           </button>
-          <button className="glass" onClick={() => goTx({ kind: 'expense', ...monthQ })}>
+          <button className="glass" onClick={() => (monthlyOn ? toast(t('monthlyExpensesHint')) : goTx({ kind: 'expense', ...monthQ }))}>
             <span><i><PiArrowUpRightBold /></i>{t('expenses')}</span>
-            <b>{money(month.e, base, locale)}</b>
+            <b>{monthlyOn && hide ? '••••••' : money(shownExpense, shownCurrency, locale)}</b>
           </button>
           <button className="glass" onClick={() => navigate('/charts')}>
             <span><i><PiPiggyBankBold /></i>{t('savedShort')}</span>
-            <b>{month.rate === null ? '—' : `${month.rate}%`}</b>
+            <b>{monthlyOn && hide ? '••••••' : monthlyOn ? (shownRate === null ? '—' : `${shownRate}%`) : month.rate === null ? '—' : `${month.rate}%`}</b>
           </button>
         </div>
         {s.settings.shortcutsOn !== false && (s.shortcuts?.length ?? 0) > 0 && <ShortcutStrip />}
+        <div style={{ marginTop: 10 }}><MonthlyToggle /></div>
       </div>
 
       <div className="paper lift">

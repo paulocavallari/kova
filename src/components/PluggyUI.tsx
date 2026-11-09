@@ -5,7 +5,7 @@ import { getState, setState, useStore } from '../lib/store';
 import { useT } from '../i18n';
 import { Sheet, Switch } from './ui';
 import { openOverlay, toast } from '../lib/nav';
-import { syncPluggyVia, testPluggyConn } from '../lib/pluggy';
+import { invalidatePluggyBills, syncPluggyVia, testPluggyConn } from '../lib/pluggy';
 
 export const hasPluggyConn = (s: State) => (s.pluggy ?? []).some((c) => c.enabled);
 
@@ -21,22 +21,27 @@ export const newPluggyConn = (): PluggyConn => ({
 });
 
 export const savePluggyConn = (c: PluggyConn) =>
-  setState((s) => ({
+  setState((s) => invalidatePluggyBills({
     ...s,
     pluggy: [...(s.pluggy ?? []).filter((x) => x.id !== c.id), c],
-  }));
+  }, c.id));
 
 export const removePluggyConn = (id: string) =>
-  setState((s) => ({
+  setState((s) => invalidatePluggyBills({
     ...s,
     pluggy: (s.pluggy ?? []).filter((x) => x.id !== id),
-  }));
+  }, id));
 
+const CONFIG_KEYS: (keyof PluggyConn)[] = ['clientId', 'clientSecret', 'baseUrl', 'itemIds'];
 export const patchPluggyConn = (id: string, patch: Partial<PluggyConn>) =>
-  setState((s) => ({
-    ...s,
-    pluggy: (s.pluggy ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
-  }));
+  setState((s) => {
+    const next = {
+      ...s,
+      pluggy: (s.pluggy ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    };
+    const invalidates = patch.enabled === false || CONFIG_KEYS.some((k) => k in patch);
+    return invalidates ? invalidatePluggyBills(next, id) : next;
+  });
 
 export async function runPluggySync(id?: string) {
   const result = await syncPluggyVia(getState, setState, id);

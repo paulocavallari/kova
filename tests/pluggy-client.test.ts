@@ -45,6 +45,36 @@ function startFake(): Promise<{ base: string; seen: Seen[]; close: () => Promise
       if (u.searchParams.get('page') === '2') return send(200, { results: [{ id: 'acc-2', type: 'CREDIT', balance: -50, currencyCode: 'BRL' }], page: 2, totalPages: 2 });
       return send(200, { results: [{ id: 'acc-1', type: 'BANK', balance: 100, currencyCode: 'BRL' }], page: 1, totalPages: 2 });
     }
+    if (u.pathname === '/bills') {
+      const account = u.searchParams.get('accountId');
+      if (account === 'bills-500') return send(500, { message: 'boom' });
+      if (account === 'bills-bad-page') return send(200, { results: [], page: 2, totalPages: 2 });
+      if (account === 'bills-conflict') {
+        return send(200, { results: [
+          { id: 'same', dueDate: '2026-11-10', totalAmount: 10, totalAmountCurrencyCode: 'BRL' },
+          { id: 'same', dueDate: '2026-11-11', totalAmount: 20, totalAmountCurrencyCode: 'BRL' },
+        ], page: 1, totalPages: 1 });
+      }
+      if (account === 'bills-bad') return send(200, { results: [{ id: 'x', dueDate: '2026-02-30', totalAmount: 1, totalAmountCurrencyCode: 'BRL' }], page: 1, totalPages: 1 });
+      if (account === 'bills-no-z') return send(200, { results: [{ id: 'noz', dueDate: '2023-07-20T00:00:00', totalAmount: 10.25, totalAmountCurrencyCode: 'BRL' }], page: 1, totalPages: 1 });
+      if (account === 'bills-z') return send(200, { results: [{ id: 'z', dueDate: '2023-07-20T00:00:00Z', totalAmount: 10.25, totalAmountCurrencyCode: 'BRL' }], page: 1, totalPages: 1 });
+      if (account === 'bills-bad-hour') return send(200, { results: [{ id: 'h', dueDate: '2023-07-20T25:00:00', totalAmount: 1, totalAmountCurrencyCode: 'BRL' }], page: 1, totalPages: 1 });
+      if (account === 'bills-suffix') return send(200, { results: [{ id: 'x', dueDate: '2026-11-05garbage', totalAmount: 1, totalAmountCurrencyCode: 'BRL' }], page: 1, totalPages: 1 });
+      if (account === 'bills-currency') return send(200, { results: [{ id: 'x', dueDate: '2026-11-05', totalAmount: 1, totalAmountCurrencyCode: 'ABCDE' }], page: 1, totalPages: 1 });
+      if (account === 'bills-shrink') {
+        return send(200, { results: [{ id: `p${u.searchParams.get('page')}`, dueDate: '2026-11-05', totalAmount: 1, totalAmountCurrencyCode: 'BRL' }], page: Number(u.searchParams.get('page')), totalPages: u.searchParams.get('page') === '1' ? 3 : 2 });
+      }
+      if (account === 'bills-grow') {
+        return send(200, { results: [{ id: `p${u.searchParams.get('page')}`, dueDate: '2026-11-05', totalAmount: 1, totalAmountCurrencyCode: 'BRL' }], page: Number(u.searchParams.get('page')), totalPages: u.searchParams.get('page') === '1' ? 2 : 3 });
+      }
+      if (u.searchParams.get('page') === '2') {
+        return send(200, { results: [{ id: 'bill-2', dueDate: '2026-12-10', totalAmount: 12.34, totalAmountCurrencyCode: 'BRL' }], page: 2, totalPages: 2 });
+      }
+      return send(200, { results: [
+        { id: 'bill-1', dueDate: '2026-11-10', totalAmount: 100.5, totalAmountCurrencyCode: 'brl' },
+        { id: 'bill-neg', dueDate: '2026-11-20', totalAmount: -5.5, totalAmountCurrencyCode: 'BRL' },
+      ], page: 1, totalPages: 2 });
+    }
     if (u.pathname === '/v2/transactions') {
       const account = u.searchParams.get('accountId');
       if (account === 'acc-404') return send(404, { message: 'not found' });
@@ -172,4 +202,30 @@ test('web default path uses global fetch; injected fetch always wins', async () 
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test('bills pagination, validation, dedupe and negative values', async (t) => {
+  const fake = await startFake();
+  t.after(() => fake.close());
+  const a = new PluggyClient(conn('a', 'client-a', SECRET_A, fake.base));
+  await a.auth();
+  const bills = await a.bills('acc-bills');
+  assert.deepEqual(bills.map((b) => b.id), ['bill-1', 'bill-neg', 'bill-2']);
+  assert.equal(bills[0].amountCents, 10050);
+  assert.equal(bills[0].currency, 'BRL');
+  assert.equal(bills[1].amountCents, -550);
+  assert.ok(fake.seen.some((x) => x.path.includes('/bills?accountId=acc-bills') && x.path.includes('page=2')));
+  await assert.rejects(() => a.bills('bills-bad-page'), /invalid bills page/);
+  await assert.rejects(() => a.bills('bills-conflict'), /conflicting bill/);
+  await assert.rejects(() => a.bills('bills-bad'), /invalid bill/);
+  await assert.rejects(() => a.bills('bills-suffix'), /invalid bill/);
+  await assert.rejects(() => a.bills('bills-bad-hour'), /invalid bill/);
+  const noZ = await a.bills('bills-no-z');
+  assert.deepEqual({ dueDate: noZ[0].dueDate, amountCents: noZ[0].amountCents }, { dueDate: '2023-07-20', amountCents: 1025 });
+  const withZ = await a.bills('bills-z');
+  assert.deepEqual({ dueDate: withZ[0].dueDate, amountCents: withZ[0].amountCents }, { dueDate: '2023-07-20', amountCents: 1025 });
+  await assert.rejects(() => a.bills('bills-currency'), /invalid bill/);
+  await assert.rejects(() => a.bills('bills-shrink'), /inconsistent bills totalPages/);
+  await assert.rejects(() => a.bills('bills-grow'), /inconsistent bills totalPages/);
+  await assert.rejects(() => a.bills('bills-500'), /HTTP 500/);
 });

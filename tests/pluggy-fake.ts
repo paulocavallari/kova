@@ -4,6 +4,8 @@ import type { PluggyAccount, PluggyTx } from '../src/lib/pluggy';
 export interface FakeAccount {
   account: PluggyAccount;
   txs: PluggyTx[];
+  bills?: { id: string; dueDate: string; totalAmount: number; totalAmountCurrencyCode: string }[];
+  billsStatus?: number;
   failStatus?: number;
 }
 
@@ -66,6 +68,16 @@ export function makeNet(apis: Record<string, FakeApi>, opts: { onAuth?: (api: Fa
       if (!item) return json(404, { message: 'no item' });
       if (item.failStatus) return json(item.failStatus, { message: 'item failed' });
       return json(200, { id: item.id, name: item.name, institution: item.institution, status: 'UPDATED', lastUpdatedAt: item.lastUpdatedAt, updatedAt: item.updatedAt });
+    }
+    if (url.pathname === '/bills') {
+      const found = findAccount(api, url.searchParams.get('accountId') ?? '');
+      if (!found) return json(404, { message: 'no account' });
+      if (found.acc.billsStatus) return json(found.acc.billsStatus, { message: 'bills failed' });
+      const page = Number(url.searchParams.get('page') ?? '1');
+      const all = found.acc.bills ?? [];
+      const half = Math.ceil(all.length / 2);
+      const results = all.length > 1 ? (page === 2 ? all.slice(half) : all.slice(0, half)) : all;
+      return json(200, { results, page, totalPages: all.length > 1 ? 2 : 1 });
     }
     if (url.pathname === '/accounts') {
       const item = api.items.find((x) => x.id === url.searchParams.get('itemId'));

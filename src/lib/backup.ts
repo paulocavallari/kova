@@ -38,6 +38,12 @@ export async function restoreBackup(text: string) {
     return { ...c, clientSecret, enabled: clientSecret ? c.enabled : false };
   });
   const next: State = pluggy ? { ...state, pluggy } : state;
-  replaceState({ ...next, settings: { ...next.settings, onboarded: true } });
+  const accounts = next.accounts.map((a) => {
+    if (!a.pluggy?.bills) return a;
+    const pluggy = { ...a.pluggy };
+    delete pluggy.bills;
+    return { ...a, pluggy };
+  });
+  replaceState({ ...next, accounts, settings: { ...next.settings, onboarded: true } });
   return { txs: state.txs.length, accounts: state.accounts.length, exported: j.exported as string | undefined };
 }

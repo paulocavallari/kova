@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PiPlusBold, PiClockCounterClockwiseBold, PiArrowsLeftRightBold, PiCaretDownBold, PiCaretUpBold, PiCheckBold, PiArrowsDownUpBold, PiDotsSixVerticalBold, PiHandGrabbingBold } from 'react-icons/pi';
 import { setState, useBalances, useStore } from '../lib/store';
 import { useT } from '../i18n';
 import { accountsSorted, toBase } from '../lib/calc';
+import { monthlyProjection } from '../lib/monthly';
+import { MonthlyToggle } from '../components/MonthlyToggle';
+import { useToday } from '../lib/useToday';
 import { money } from '../lib/format';
 import { Bubble } from '../components/ui';
 import { openAccountEditor } from '../components/Editors';
@@ -21,6 +24,9 @@ export function Accounts() {
   const archived = list.filter((a) => a.archived);
   const hide = false; // privacy mode only applies to Home: this screen is for managing accounts
   const base = s.settings.baseCurrency;
+  const day = useToday();
+  const monthlyOn = s.settings.monthlyCardView !== false;
+  const monthly = useMemo(() => monthlyProjection(s, undefined, day), [s, day]);
 
   const positive = active.filter((a) => a.includeInTotal).map((a) => ({ a, v: Math.max(toBase(s, bal.get(a.id) ?? 0, a.currency), 0) })).filter((p) => p.v > 0).sort((x, y) => y.v - x.v);
   const posTotal = positive.reduce((x, p) => x + p.v, 0) || 1;
@@ -31,6 +37,8 @@ export function Accounts() {
   const row = (id: string) => {
     const a = s.accounts.find((x) => x.id === id)!;
     const v = bal.get(a.id) ?? 0;
+    const cardRow = monthlyOn ? monthly.cards.find((c) => c.accountId === a.id) : undefined;
+    const cardMissing = cardRow?.status === 'missing' || cardRow?.status === 'negative' || (!!cardRow && cardRow.amount === null);
     const foreign = a.currency !== base;
     return (
       <div className="row" key={a.id} style={{ gap: 0 }}>
@@ -41,8 +49,11 @@ export function Accounts() {
             <div className="s">{a.currency}{!a.includeInTotal ? ' · ' + t('includeInTotal') + ' ✕' : ''}</div>
           </div>
           <div className="right">
-            <div className="amt" style={v < 0 ? { color: 'var(--exp)' } : undefined}>{hide ? '••••••' : money(v, a.currency, locale)}</div>
-            {foreign && !hide && <div className="amt2">≈ {money(toBase(s, v, a.currency), base, locale)}</div>}
+            <div className="amt" style={cardRow && !cardMissing ? { color: 'var(--exp)' } : v < 0 ? { color: 'var(--exp)' } : undefined}>
+              {hide ? '••••••' : cardRow ? (cardMissing || cardRow.amount === null ? t('cardUnavailable') : money(-cardRow.amount, a.currency, locale)) : money(v, a.currency, locale)}
+            </div>
+            {cardRow && !cardMissing && <div className="amt2">{cardRow.source === 'manual' ? t('cardManualMonth') : t('cardBillMonth')}{cardRow.status !== 'fresh' ? ` · ${cardRow.fetchedAt ? t('monthlyStaleNotice', { d: new Date(cardRow.fetchedAt).toLocaleString(locale) }) : t('monthlyStale')}` : ''}</div>}
+            {!cardRow && foreign && !hide && <div className="amt2">≈ {money(toBase(s, v, a.currency), base, locale)}</div>}
           </div>
         </button>
         {edit && !a.archived && <span className="handle"><PiDotsSixVerticalBold /></span>}
@@ -74,6 +85,9 @@ export function Accounts() {
           </>
         )}
       </div>
+
+      {monthlyOn && <div className="small muted" style={{ padding: '0 16px 10px' }}>{t('accountsMonthlyHint')}</div>}
+      <div className="paper" style={{ padding: '2px 12px' }}><MonthlyToggle /></div>
 
       <div className="qa two">
         <button onClick={() => navigate('/tx?kind=transfer&gran=year')}>

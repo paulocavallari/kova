@@ -452,3 +452,23 @@ test('saving another field after a concurrent sync keeps the live automatic name
     await view.unmount();
   }
 });
+
+test('editing origin configuration clears bill caches; auto toggle keeps them', async () => {
+  const c = conn('a');
+  const account = {
+    id: 'pg-a-card1', name: 'Cartão', icon: 'cards', color: '#B57BFF', currency: 'BRL', initial: 0,
+    includeInTotal: true, archived: false, order: 2,
+    pluggy: { apiId: 'a', accountId: 'card1', type: 'CREDIT', bills: { status: 'fresh' as const, fetchedAt: '2026-11-09T00:00:00.000Z', items: [{ id: 'b1', dueDate: '2026-11-05', amountCents: 1000, currency: 'BRL' }] } },
+  };
+  const base = fixture([c]);
+  store.replaceState({ ...base, accounts: [...base.accounts, account] });
+  ui.patchPluggyConn('a', { auto: false });
+  const cached = () => store.getState().accounts.find((a) => a.id === 'pg-a-card1')?.pluggy?.bills;
+  assert.ok(cached());
+  ui.patchPluggyConn('a', { clientId: 'other' });
+  assert.equal(cached(), undefined);
+
+  store.replaceState({ ...base, accounts: [...base.accounts, account] });
+  ui.savePluggyConn({ ...c, baseUrl: 'https://proxy.example' });
+  assert.equal(cached(), undefined);
+});
