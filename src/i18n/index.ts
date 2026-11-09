@@ -99,6 +99,7 @@ const en = {
   forgotPin: 'Forgot the PIN? Reinstall Kova and restore the automatic backup.', unlock: 'Unlock', usePin: 'Use PIN',
   backupFound: 'Backup found', backupFoundD: 'Kova found a copy of your data. Restore it now?', restoreNow: 'Restore', checkingBackups: 'Looking for backups…',
   noBackupFound: 'If you had Kova before, pick the file in Documents/Kova or in Google Drive.',
+  pluggyTitle: 'Meu Pluggy (Open Finance)', pluggyD: 'Connect one or more Meu Pluggy APIs', pluggyAdd: 'Add API', pluggyQuick: 'Meu Pluggy', pluggySync: 'Sync', pluggySyncAll: 'Sync all', pluggySyncing: 'Syncing…', pluggySynced: 'Pluggy updated', pluggyFailed: 'Could not sync Pluggy', pluggyNever: 'Never synced', pluggyEmpty: 'No API connected yet.', pluggyInvalid: 'Fill in the name, client ID and secret', pluggyClientId: 'Client ID', pluggyClientSecret: 'Client secret', pluggyItemIds: 'Item IDs (comma or new line)', pluggyBaseUrl: 'Base URL', pluggyEnabled: 'Connection active', pluggyTest: 'Test connection', pluggyTestOk: 'Connection works', pluggyTestFail: 'Connection failed', pluggyAccounts: 'Linked accounts', pluggyNoAccounts: 'No account linked yet', pluggyAuto: 'Automatic update', pluggyErrAuth: 'Check the client ID and secret', pluggyErrConfig: 'Invalid configuration or base URL', pluggyErrNetwork: 'Network unavailable', pluggyErrNotFound: 'Item or account not found', pluggyErrData: 'Unexpected data from Pluggy', pluggyErrGeneric: 'Could not reach Pluggy',
 };
 
 type Dict = typeof en;
@@ -201,6 +202,7 @@ const pt: Dict = {
   forgotPin: 'Esqueceu o PIN? Reinstale o Kova e restaure o backup automático.', unlock: 'Desbloquear', usePin: 'Usar PIN',
   backupFound: 'Backup encontrado', backupFoundD: 'O Kova encontrou uma cópia dos seus dados. Restaurar agora?', restoreNow: 'Restaurar', checkingBackups: 'Procurando backups…',
   noBackupFound: 'Se você já usava o Kova, escolha o arquivo em Documentos/Kova ou no Google Drive.',
+  pluggyTitle: 'Meu Pluggy (Open Finance)', pluggyD: 'Conecte uma ou mais APIs do Meu Pluggy', pluggyAdd: 'Adicionar API', pluggyQuick: 'Meu Pluggy', pluggySync: 'Sincronizar', pluggySyncAll: 'Sincronizar tudo', pluggySyncing: 'Sincronizando…', pluggySynced: 'Pluggy atualizado', pluggyFailed: 'Não foi possível sincronizar o Pluggy', pluggyNever: 'Nunca sincronizado', pluggyEmpty: 'Nenhuma API conectada ainda.', pluggyInvalid: 'Preencha nome, client ID e segredo', pluggyClientId: 'Client ID', pluggyClientSecret: 'Segredo do cliente', pluggyItemIds: 'IDs dos itens (vírgula ou linha nova)', pluggyBaseUrl: 'URL base', pluggyEnabled: 'Conexão ativa', pluggyTest: 'Testar conexão', pluggyTestOk: 'Conexão funcionando', pluggyTestFail: 'Falha na conexão', pluggyAccounts: 'Contas vinculadas', pluggyNoAccounts: 'Nenhuma conta vinculada ainda', pluggyAuto: 'Atualização automática', pluggyErrAuth: 'Confira o client ID e o segredo', pluggyErrConfig: 'Configuração ou URL base inválida', pluggyErrNetwork: 'Rede indisponível', pluggyErrNotFound: 'Item ou conta não encontrado', pluggyErrData: 'Dados inesperados do Pluggy', pluggyErrGeneric: 'Não foi possível acessar o Pluggy',
 };
 
 export type TKey = keyof Dict;
