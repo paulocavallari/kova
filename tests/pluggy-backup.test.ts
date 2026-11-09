@@ -73,3 +73,31 @@ test('restore still refuses files that are not Kova backups', async () => {
   await assert.rejects(() => restoreBackup(''), /EMPTY/);
   await assert.rejects(() => restoreBackup('{oops'), /BROKEN/);
 });
+
+test('backup round trip keeps Pluggy name metadata and still omits the secret', async () => {
+  const s = initialState('pt');
+  const state: State = {
+    ...s,
+    accounts: [{
+      id: 'pg-a-bank1',
+      name: 'Minha conta',
+      icon: 'bank',
+      color: '#3D8BFF',
+      currency: 'BRL',
+      initial: 0,
+      includeInTotal: true,
+      archived: false,
+      order: 0,
+      pluggy: { apiId: 'a', accountId: 'bank1', type: 'BANK', lastAutoName: 'Banco A', nameCustomized: true },
+    }],
+    pluggy: [conn('a')],
+  };
+  const json = await buildBackup(state);
+  assert.equal(json.includes(SECRET), false);
+  const parsed = JSON.parse(json);
+  assert.deepEqual(parsed.state.accounts[0].pluggy, { apiId: 'a', accountId: 'bank1', type: 'BANK', lastAutoName: 'Banco A', nameCustomized: true });
+  replaceState(fixture([conn('a')]));
+  await restoreBackup(json);
+  assert.deepEqual(getState().accounts[0].pluggy, { apiId: 'a', accountId: 'bank1', type: 'BANK', lastAutoName: 'Banco A', nameCustomized: true });
+  assert.equal(getState().pluggy?.[0].clientSecret, SECRET);
+});

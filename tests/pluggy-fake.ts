@@ -10,6 +10,7 @@ export interface FakeAccount {
 export interface FakeItem {
   id: string;
   name: string;
+  institution?: string;
   lastUpdatedAt?: string;
   updatedAt?: string;
   accounts: FakeAccount[];
@@ -64,7 +65,7 @@ export function makeNet(apis: Record<string, FakeApi>, opts: { onAuth?: (api: Fa
       const item = api.items.find((x) => x.id === decodeURIComponent(url.pathname.slice('/items/'.length)));
       if (!item) return json(404, { message: 'no item' });
       if (item.failStatus) return json(item.failStatus, { message: 'item failed' });
-      return json(200, { id: item.id, name: item.name, status: 'UPDATED', lastUpdatedAt: item.lastUpdatedAt, updatedAt: item.updatedAt });
+      return json(200, { id: item.id, name: item.name, institution: item.institution, status: 'UPDATED', lastUpdatedAt: item.lastUpdatedAt, updatedAt: item.updatedAt });
     }
     if (url.pathname === '/accounts') {
       const item = api.items.find((x) => x.id === url.searchParams.get('itemId'));

@@ -146,7 +146,16 @@ function AccountEditor({ acc, close }: { acc?: Account; close: () => void }) {
       id: uid(), from: diff > 0 ? ADJ : a.id, to: diff > 0 ? a.id : ADJ, fromAmount: Math.abs(diff), toAmount: Math.abs(diff),
       date: today(), note: t('manualAdjust'), created: new Date().toISOString(),
     }] : [];
-    setState((st) => ({ ...st, accounts: acc ? st.accounts.map((x) => (x.id === a.id ? a : x)) : [...st.accounts, a], transfers: [...adj, ...st.transfers] }));
+    setState((st) => {
+      const live = acc ? st.accounts.find((x) => x.id === acc.id) : undefined;
+      const pluggy = live?.pluggy ? { ...live.pluggy } : undefined;
+      const nameEdited = !!acc && name.trim() !== acc.name;
+      if (pluggy && nameEdited) pluggy.nameCustomized = true;
+      const saved: Account = pluggy
+        ? { ...a, name: nameEdited ? name.trim() : live!.name, pluggy }
+        : a;
+      return { ...st, accounts: acc ? st.accounts.map((x) => (x.id === a.id ? saved : x)) : [...st.accounts, saved], transfers: [...adj, ...st.transfers] };
+    });
     if (diff) toast(t('adjustSaved'));
     toast(t('savedOk'));
     close();

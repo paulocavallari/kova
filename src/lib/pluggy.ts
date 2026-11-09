@@ -348,13 +348,36 @@ export function pairLegs(legs: Leg[]): { pairs: { a: Leg; b: Leg; kind: LegRole 
   }
   return { pairs, singles: sorted.filter((l) => !used.has(l)) };
 }
+const cleanName = (v?: string) => (typeof v === 'string' ? v.trim() : '');
+const fallbackName = (item: PluggyItem, conn: PluggyConn) => cleanName(item.name) || cleanName(item.institution) || cleanName(conn.name) || 'Conta Pluggy';
+const legacyAutoName = (item: PluggyItem, conn: PluggyConn): string => {
+  const label = item.name || item.institution || conn.name;
+  return label && fold(label) !== fold(conn.name) ? `${label} · ${conn.name}` : conn.name;
+};
 function ensureAccount(state: State, conn: PluggyConn, item: PluggyItem, remote: PluggyAccount): { state: State; account: Account } {
   const found = state.accounts.find((a) => a.pluggy?.apiId === conn.id && a.pluggy.accountId === remote.id);
-  if (found) return { state, account: found };
-  const label = item.name || item.institution || conn.name;
+  const remoteName = cleanName(remote.name);
+  if (found) {
+    if (!remoteName) return { state, account: found };
+    const pg = found.pluggy!;
+    if (pg.nameCustomized) return { state, account: found };
+    let account: Account;
+    if (pg.lastAutoName !== undefined) {
+      if (found.name !== pg.lastAutoName) account = { ...found, pluggy: { ...pg, nameCustomized: true } };
+      else account = { ...found, name: remoteName, pluggy: { ...pg, lastAutoName: remoteName } };
+    } else if (found.name !== legacyAutoName(item, conn)) {
+      account = { ...found, pluggy: { ...pg, nameCustomized: true } };
+    } else {
+      account = { ...found, name: remoteName, pluggy: { ...pg, lastAutoName: remoteName } };
+    }
+    return { state: { ...state, accounts: state.accounts.map((a) => (a.id === account.id ? account : a)) }, account };
+  }
+  const id = `pg-${conn.id}-${remote.id}`;
+  if (state.accounts.some((a) => a.id === id)) throw new PluggyError('pluggy: account id collision');
+  const name = remoteName || fallbackName(item, conn);
   const account: Account = {
-    id: `pg-${conn.id}-${remote.id}`,
-    name: label && fold(label) !== fold(conn.name) ? `${label} · ${conn.name}` : conn.name,
+    id,
+    name,
     icon: remote.type === 'CREDIT' ? 'cards' : 'bank',
     color: remote.type === 'CREDIT' ? '#B57BFF' : '#3D8BFF',
     currency: remote.currencyCode,
@@ -362,10 +385,11 @@ function ensureAccount(state: State, conn: PluggyConn, item: PluggyItem, remote:
     includeInTotal: true,
     archived: false,
     order: state.accounts.length,
-    pluggy: { apiId: conn.id, accountId: remote.id, type: remote.type },
+    pluggy: { apiId: conn.id, accountId: remote.id, type: remote.type, lastAutoName: name },
   };
   return { state: { ...state, accounts: [...state.accounts, account] }, account };
 }
+
 const patchConn = (state: State, id: string, patch: Partial<PluggyConn>): State => ({ ...state, pluggy: (state.pluggy ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 function txFromLeg(leg: Leg, state: State, existing: Map<string, Tx>): Tx {
   const kind: 'income' | 'expense' = leg.dir === 'in' ? 'income' : 'expense';
@@ -579,11 +603,21 @@ export async function syncPluggyVia(get: () => State, apply: ApplyState, connId?
       const collected = await collectPluggy(conn, opts);
       const now = opts.now?.() ?? Date.now();
       let discarded = false;
+      let failure: string | undefined;
       apply((current) => {
-        const next = commitPluggy(current, collected, now);
-        if (next === current) discarded = true;
-        return next;
+        try {
+          const next = commitPluggy(current, collected, now);
+          if (next === current) discarded = true;
+          return next;
+        } catch (e) {
+          failure = safeError(e, conn.clientSecret);
+          return current;
+        }
       });
+      if (failure) {
+        errors.push(failure);
+        continue;
+      }
       if (discarded) {
         errors.push('pluggy: configuration changed during sync');
         continue;
@@ -639,16 +673,22 @@ export async function autoSyncPluggyVia(get: () => State, apply: ApplyState, opt
         const ok = collected.errors.length === 0;
         const source = sourceConfig(conn);
         let discarded = false;
+        let failed = false;
         apply((current) => {
           const currentConn = (current.pluggy ?? []).find((c) => c.id === conn.id);
           if (!currentConn || !currentConn.enabled || !sameConfig(currentConn, source)) {
             discarded = true;
             return current;
           }
-          const committed = commitPluggy(current, collected, now);
-          return ok ? committed : patchConn(committed, conn.id, { lastProbeAt: new Date(now).toISOString() });
+          try {
+            const committed = commitPluggy(current, collected, now);
+            return ok ? committed : patchConn(committed, conn.id, { lastProbeAt: new Date(now).toISOString() });
+          } catch {
+            failed = true;
+            return current;
+          }
         });
-        if (!discarded) changed = true;
+        if (!discarded && !failed) changed = true;
         continue;
       }
       if (!probeDue(conn, now)) continue;
@@ -685,7 +725,19 @@ export async function autoSyncPluggyVia(get: () => State, apply: ApplyState, opt
       changed = true;
       if (newer) {
         const collected = await collectPluggy(conn, opts);
-        apply((current) => commitPluggy(current, collected, now));
+        apply((current) => {
+          const live = (current.pluggy ?? []).find((c) => c.id === conn.id);
+          if (!live || !live.enabled || !sameConfig(live, collected.source)) return current;
+          try {
+            return commitPluggy(current, collected, now);
+          } catch (e) {
+            return patchConn(current, conn.id, {
+              lastStatus: 'error',
+              lastError: safeError(e, conn.clientSecret),
+              lastProbeAt: new Date(now).toISOString(),
+            });
+          }
+        });
       }
     }
     return { changed };

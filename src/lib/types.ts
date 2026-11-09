@@ -11,7 +11,7 @@ export interface Account {
   archived: boolean;
   order: number;
   note?: string;
-  pluggy?: { apiId: string; accountId: string; type: string };
+  pluggy?: { apiId: string; accountId: string; type: string; lastAutoName?: string; nameCustomized?: boolean };
 }
 export interface Category {
   id: string;
