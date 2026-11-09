@@ -1,3 +1,4 @@
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { Account, PluggyConn, State, Transfer, Tx } from './types';
 import { addDays, balances, fold, toBase } from './calc';
 export const PLUGGY_BASE_URL = 'https://api.pluggy.ai';
@@ -99,19 +100,23 @@ type ConnAuth = Pick<PluggyConn, 'id' | 'clientId' | 'clientSecret' | 'baseUrl'>
 export class PluggyClient {
   private readonly base: string;
   private readonly conn: ConnAuth;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl?: typeof fetch;
   private token = '';
   constructor(conn: ConnAuth, opts: { fetchImpl?: typeof fetch } = {}) {
     this.conn = conn;
     this.base = baseUrlOf(conn);
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = opts.fetchImpl;
   }
+  /** Android uses the core native bridge; web and injected fetch use the fetch path. */
   private async call(path: string, init: RequestInit = {}): Promise<{ status: number; ok: boolean; body: unknown }> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.token) headers['X-API-KEY'] = this.token;
+    const url = this.base + path;
+    if (!this.fetchImpl && Capacitor.getPlatform() === 'android') return this.nativeCall(url, init, headers);
+    const fetchImpl = this.fetchImpl ?? globalThis.fetch;
     let res: Response;
     try {
-      res = await this.fetchImpl(this.base + path, { ...init, headers });
+      res = await fetchImpl(url, { ...init, headers });
     } catch {
       throw new PluggyError('pluggy: network error');
     }
@@ -121,7 +126,34 @@ export class PluggyClient {
     } catch {
       body = undefined;
     }
-    return { status: res.status, ok: res.ok, body };
+    return { status: res.status, ok: res.status >= 200 && res.status < 300, body };
+  }
+  private async nativeCall(url: string, init: RequestInit, headers: Record<string, string>): Promise<{ status: number; ok: boolean; body: unknown }> {
+    const method = (init.method ?? 'GET').toUpperCase();
+    let data: unknown;
+    if (typeof init.body === 'string' && init.body) {
+      try {
+        data = JSON.parse(init.body);
+      } catch {
+        data = init.body;
+      }
+    }
+    let res: { status?: number; data?: unknown };
+    try {
+      res = await CapacitorHttp.request({ url, method, headers, ...(data !== undefined ? { data } : {}) });
+    } catch {
+      throw new PluggyError('pluggy: network error');
+    }
+    const status = typeof res.status === 'number' ? res.status : 0;
+    let body = res.data;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = undefined;
+      }
+    }
+    return { status, ok: status >= 200 && status < 300, body };
   }
   private checked(res: { status: number; ok: boolean; body: unknown }): unknown {
     if (!res.ok) throw new PluggyError(`pluggy: HTTP ${res.status}`);

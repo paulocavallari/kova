@@ -147,3 +147,29 @@ test('Meu Pluggy client', async (t) => {
     assert.throws(() => new PluggyClient(conn('d', 'client-a', SECRET_A, 'ftp://nope')), /invalid base url/);
   });
 });
+
+test('web default path uses global fetch; injected fetch always wins', async () => {
+  const original = globalThis.fetch;
+  let webCalls = 0;
+  globalThis.fetch = (async () => {
+    webCalls++;
+    return new Response(JSON.stringify({ apiKey: 'key-web' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const web = new PluggyClient(conn('web', 'client-a', SECRET_A, 'http://web.test'));
+    assert.equal(await web.auth(), 'key-web');
+    assert.equal(webCalls, 1);
+
+    let injectedCalls = 0;
+    const injected = (async () => {
+      injectedCalls++;
+      return new Response(JSON.stringify({ apiKey: 'key-injected' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const custom = new PluggyClient(conn('custom', 'client-a', SECRET_A, 'http://web.test'), { fetchImpl: injected });
+    assert.equal(await custom.auth(), 'key-injected');
+    assert.equal(injectedCalls, 1);
+    assert.equal(webCalls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

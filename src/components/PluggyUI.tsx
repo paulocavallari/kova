@@ -59,6 +59,7 @@ function ConnForm({ initial, onDone }: { initial: PluggyConn; onDone: () => void
   const { t } = useT();
   const [c, setC] = useState(initial);
   const [secret, setSecret] = useState('');
+  const [idsText, setIdsText] = useState(initial.itemIds.join('\n'));
   const set = (patch: Partial<PluggyConn>) => setC({ ...c, ...patch });
   const field = (label: string, node: ReactNode) => (
     <label className="field">
@@ -75,7 +76,7 @@ function ConnForm({ initial, onDone }: { initial: PluggyConn; onDone: () => void
     savePluggyConn({
       ...c,
       clientSecret,
-      itemIds: c.itemIds.join(',').split(/[\s,]+/).filter(Boolean),
+      itemIds: idsText.split(/[\s,]+/).filter(Boolean),
     });
     onDone();
   };
@@ -85,7 +86,7 @@ function ConnForm({ initial, onDone }: { initial: PluggyConn; onDone: () => void
         {field(t('name'), <input value={c.name} onChange={(e) => set({ name: e.target.value })} />)}
         {field(t('pluggyClientId'), <input value={c.clientId} onChange={(e) => set({ clientId: e.target.value })} />)}
         {field(t('pluggyClientSecret'), <input type="password" value={secret} placeholder={c.clientSecret ? '••••••' : ''} onChange={(e) => setSecret(e.target.value)} />)}
-        {field(t('pluggyItemIds'), <textarea value={c.itemIds.join('\n')} onChange={(e) => set({ itemIds: e.target.value.split(/[\s,]+/).filter(Boolean) })} />)}
+        {field(t('pluggyItemIds'), <textarea value={idsText} onChange={(e) => setIdsText(e.target.value)} />)}
         {field(t('pluggyBaseUrl'), <input value={c.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />)}
         <div className="setting">
           <div className="grow">

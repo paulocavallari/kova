@@ -12,6 +12,7 @@ g.history = dom.window.history;
 g.localStorage = dom.window.localStorage;
 g.HTMLElement = dom.window.HTMLElement;
 g.HTMLInputElement = dom.window.HTMLInputElement;
+g.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
 g.Node = dom.window.Node;
 g.Event = dom.window.Event;
 g.MouseEvent = dom.window.MouseEvent;
@@ -58,6 +59,35 @@ async function mount(): Promise<{ root: ReturnType<typeof createRoot>; box: HTML
       box.remove();
     },
   };
+}
+function setTextarea(el: HTMLTextAreaElement, value: string, selection?: number) {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!;
+  setter.call(el, value);
+  if (selection !== undefined) el.setSelectionRange(selection, selection);
+  el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+}
+function setInput(el: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(el, value);
+  el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+}
+async function openAddForm(box: HTMLElement) {
+  const add = buttonWithText(box, 'Add API');
+  assert.ok(add, 'botão Add API presente');
+  await act(async () => { add!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+  const textarea = box.querySelector('textarea') as HTMLTextAreaElement;
+  assert.ok(textarea, 'textarea de Item IDs presente');
+  return textarea;
+}
+async function fillRequired(box: HTMLElement) {
+  const inputs = Array.from(box.querySelectorAll('input'));
+  const name = inputs.find((i) => i.type === 'text') as HTMLInputElement;
+  await act(async () => { setInput(name, 'API nova'); });
+  const all = Array.from(box.querySelectorAll('input'));
+  const clientId = all.find((i) => i.type === 'text' && i !== name) as HTMLInputElement;
+  await act(async () => { setInput(clientId, 'client-new'); });
+  const secret = box.querySelector('input[type="password"]') as HTMLInputElement;
+  await act(async () => { setInput(secret, 'secret-new'); });
 }
 function click(box: HTMLElement, label: string) {
   const el = box.querySelector(`[aria-label="${label}"]`) as HTMLElement | null;
@@ -194,4 +224,50 @@ test('timer makes no calls when automatic update is off and stops on cleanup', a
   stop();
   assert.equal(net.calls.length, 0);
   assert.equal(current, before);
+});
+
+test('item IDs textarea keeps separators and cursor while typing, normalizing only on save', async () => {
+  store.replaceState(fixture([]));
+  const view = await mount();
+  try {
+    const textarea = await openAddForm(view.box);
+    for (const value of ['a', 'a,', 'a,b', 'a,b\n']) {
+      await act(async () => { setTextarea(textarea, value); });
+      assert.equal(textarea.value, value, `valor preservado após ${JSON.stringify(value)}`);
+    }
+    await act(async () => { setTextarea(textarea, 'a,c', 1); });
+    await act(async () => { setTextarea(textarea, 'ab,c', 2); });
+    assert.equal(textarea.value, 'ab,c');
+    assert.equal(textarea.selectionStart, 2, 'cursor preservado na inserção do meio');
+    await act(async () => { setTextarea(textarea, ' id1, id2 \n id3 \r\n '); });
+    assert.equal(textarea.value.replace(/\r\n/g, '\n'), ' id1, id2 \n id3 \n ');
+    await fillRequired(view.box);
+    const save = buttonWithText(view.box, 'Save');
+    await act(async () => { save!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    assert.deepEqual(store.getState().pluggy?.[0].itemIds, ['id1', 'id2', 'id3']);
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('editing an existing connection keeps separators in the textarea and saves the exact array', async () => {
+  store.replaceState(fixture([conn('a')]));
+  const view = await mount();
+  try {
+    const open = buttonWithText(view.box, 'API a');
+    assert.ok(open);
+    await act(async () => { open!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    const textarea = view.box.querySelector('textarea') as HTMLTextAreaElement;
+    assert.equal(textarea.value, 'ia');
+    await act(async () => { setTextarea(textarea, 'ia,\nib,'); });
+    assert.equal(textarea.value, 'ia,\nib,');
+    const save = buttonWithText(view.box, 'Save');
+    await act(async () => { save!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    const saved = store.getState().pluggy?.[0];
+    assert.deepEqual(saved?.itemIds, ['ia', 'ib']);
+    assert.equal(saved?.clientSecret, 'secret-a');
+    assert.equal(saved?.name, 'API a');
+  } finally {
+    await view.unmount();
+  }
 });
