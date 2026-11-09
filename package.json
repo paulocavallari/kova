@@ -2,7 +2,7 @@
   "name": "kova",
   "version": "1.8.5",
   "private": true,
-  "description": "Kova — a beautiful, private, offline personal finance app for Android (English & Português).",
+  "description": "Kova \u2014 a beautiful, private, offline personal finance app for Android (English & Portugu\u00eas).",
   "license": "MIT",
   "type": "module",
   "scripts": {
