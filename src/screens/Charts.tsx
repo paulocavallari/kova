@@ -6,7 +6,7 @@ import { byCategory, filterTx, lastMonths, Period, periodOf, shiftPeriod, sum, t
 import { money, monthLabel } from '../lib/format';
 import { Bubble, Money, Seg, PeriodNav, Empty } from '../components/ui';
 import { Bars, Donut } from '../components/charts';
-import { GranPicker, goTx, periodLabel } from './Transactions';
+import { GranPicker, goTx } from './Transactions';
 import { Reports } from './Reports';
 
 type Tab = 'reports' | 'overview' | Kind;

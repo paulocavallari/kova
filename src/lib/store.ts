@@ -76,6 +76,9 @@ export async function maintenance() {
     emit();
     persist();
   }
+  import('./pluggy')
+    .then((p) => p.autoSyncPluggyVia(() => state, setState))
+    .catch(() => { /* isolated per connection */ });
   // safety net: a month without any backup yet (e.g. first start after the update)
   if (state.settings.onboarded && state.settings.autoBackup && (state.settings.lastBackup ?? '').slice(0, 7) !== today().slice(0, 7)) {
     await backupNow();

@@ -12,6 +12,7 @@ import { today, fold } from '../lib/calc';
 import { PinSheet, setPin } from '../components/Lock';
 import { ShortcutsSheet } from '../components/Shortcuts';
 import { NotifSettingsSheet } from '../components/NotifUI';
+import { PluggySettingsSheet } from '../components/PluggyUI';
 import { biometricAvailable } from '../native';
 
 declare const __APP_VERSION__: string;
@@ -296,6 +297,15 @@ export function Settings() {
         <button className="setting" onClick={() => openOverlay(() => <NotifSettingsSheet />)}>
           <Ico><PiLightningDuotone /></Ico>
           <div className="grow"><div className="t">{t('autoEntry')}</div><div className="s">{st.notif?.on ? Object.values(st.notif.apps).filter((a) => a.on).map((a) => a.label).join(', ') || t('autoEntryD') : t('autoEntryD')}</div></div>
+          <PiCaretRightBold className="muted" />
+        </button>
+      </div>
+
+      <div className="section-title">{t('pluggyTitle')}</div>
+      <div className="paper flush">
+        <button className="setting" onClick={() => openOverlay(() => <PluggySettingsSheet />)}>
+          <Ico><PiLightningDuotone /></Ico>
+          <div className="grow"><div className="t">{t('pluggyTitle')}</div><div className="s">{t('pluggyD')}</div></div>
           <PiCaretRightBold className="muted" />
         </button>
       </div>

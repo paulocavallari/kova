@@ -1,6 +1,5 @@
 export type Cents = number;
 export type Kind = 'expense' | 'income';
-
 export interface Account {
   id: string;
   name: string;
@@ -12,8 +11,8 @@ export interface Account {
   archived: boolean;
   order: number;
   note?: string;
+  pluggy?: { apiId: string; accountId: string; type: string };
 }
-
 export interface Category {
   id: string;
   name: string;
@@ -25,7 +24,6 @@ export interface Category {
   archived: boolean;
   order: number;
 }
-
 export interface Tx {
   id: string;
   kind: Kind;
@@ -44,17 +42,15 @@ export interface Tx {
   attachments?: Attachment[];
   src?: 'notif'; // created from a bank notification
   nid?: string; // id of that detection
+  pluggy?: { apiId: string; txId: string; op: string };
 }
-
 export interface Attachment {
   id: string; // key of the file in IndexedDB
   name: string;
   type: string;
   size: number;
 }
-
 export type Repeat = 'weekly' | 'monthly' | 'yearly';
-
 export interface Transfer {
   id: string;
   from: string;
@@ -64,11 +60,10 @@ export interface Transfer {
   date: string;
   note: string;
   created: string;
+  pluggy?: { fromApiId: string; fromTxId: string; fromDate: string; toApiId: string; toTxId: string; toDate: string; kind?: 'regular' | 'card' | 'invest' };
 }
-
 export type Theme = 'system' | 'light' | 'dark';
 export type Lang = 'auto' | 'en' | 'pt';
-
 export interface Settings {
   name: string;
   baseCurrency: string;
@@ -95,7 +90,6 @@ export interface Settings {
   haptics?: boolean; // vibrate on taps (default on)
   showTags?: boolean; // tags field in the transaction editor (default on)
 }
-
 export interface State {
   version: 1;
   accounts: Account[];
@@ -106,8 +100,38 @@ export interface State {
   merchants?: Record<string, Merchant>; // learned from bank notifications: 'kind|merchant key' → choice
   notifBlocked?: Record<string, string[]>; // per app: message shapes that are not transactions
   settings: Settings;
+  pluggy?: PluggyConn[]; // independent "Meu Pluggy" API connections (empty on legacy states)
 }
-
+export interface PluggyConn {
+  id: string;
+  name: string;
+  clientId: string;
+  clientSecret: string;
+  itemIds: string[];
+  baseUrl: string;
+  enabled: boolean;
+  auto: boolean; // automatic 24h / new-data updates
+  lastSyncAt?: string;
+  lastStatus?: 'ok' | 'error';
+  lastError?: string;
+  itemUpdatedAt?: Record<string, string>; // lastUpdatedAt seen per item after a successful sync
+  lastProbeAt?: string; // cooldown of the light item probe
+  lastCount?: number; // imported transactions in the last sync
+  accountSync?: Record<string, string>; // per account: last successful dateFrom checkpoint
+  pending?: PluggyPendingLeg[]; // unpaired card/investment legs kept only for a future pair
+}
+export interface PluggyPendingLeg {
+  apiId: string;
+  txId: string;
+  accountId: string;
+  currency: string;
+  cents: number;
+  date: string;
+  op: string;
+  desc: string;
+  role: 'card' | 'invest';
+  dir: 'out' | 'in';
+}
 /** One-tap launch preset ("Padaria · Café · N26"). */
 export interface Shortcut {
   id: string;
@@ -117,7 +141,6 @@ export interface Shortcut {
   amount?: Cents; // fixed amount, optional
   note: string;
 }
-
 export interface Merchant { cat: string; note: string; acc: string; n: number; name?: string }
 export type NotifMode = 'ask' | 'smart' | 'auto';
 export interface NotifApp { on: boolean; acc: string; mode: NotifMode; label: string }

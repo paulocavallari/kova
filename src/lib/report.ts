@@ -1,5 +1,5 @@
 import type { Category, State, Tx } from './types';
-import { addDays, balances, fold, iso, pad, parseIso, today, totalBalance, shiftPeriod, Period } from './calc';
+import { addDays, balances, fold, pad, parseIso, today, totalBalance, shiftPeriod, Period } from './calc';
 
 export type RGran = 'month' | 'quarter' | 'year';
 export type RPeriod = Period;

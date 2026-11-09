@@ -17,6 +17,7 @@ import { launchShortcut } from './components/Shortcuts';
 import { LockScreen } from './components/Lock';
 import { applyBackupText, restoreError } from './screens/Settings';
 import { openOverlay, toast, getAddKind, navigate } from './lib/nav';
+import { startPluggyAutoSync } from './lib/pluggy';
 import { Sheet } from './components/ui';
 
 function useTheme() {
@@ -90,6 +91,10 @@ function Shell({ dark }: { dark: boolean }) {
   }, []);
   useEffect(() => {
     if (s.settings.onboarded) import('./lib/notif').then((n) => n.startNotifSync());
+  }, [s.settings.onboarded]);
+  useEffect(() => {
+    if (!s.settings.onboarded) return;
+    return startPluggyAutoSync(() => getState(), (fn) => setState(fn));
   }, [s.settings.onboarded]);
   useEffect(() => {
     takeCrashNote().then((txt) => { if (txt) openOverlay(() => <CrashSheet text={txt} />); });

@@ -43,8 +43,8 @@ export function Seg<T extends string>({ value, options, onChange, color, small }
   );
 }
 
-export function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return <button className={'switch' + (on ? ' on' : '')} onClick={() => onChange(!on)} role="switch" aria-checked={on} />;
+export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
+  return <button className={'switch' + (on ? ' on' : '')} onClick={() => onChange(!on)} role="switch" aria-checked={on} aria-label={label} />;
 }
 
 export function Sheet({ title, children, footer, full, onClose, actions }: { title?: ReactNode; children: ReactNode; footer?: ReactNode; full?: boolean; onClose?: () => void; actions?: ReactNode }) {

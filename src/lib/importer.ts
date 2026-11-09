@@ -46,7 +46,7 @@ export async function importMmBackup(data: ArrayBuffer | Uint8Array, prev?: Stat
       const data = await entry.async('uint8array');
       const type = /\.png$/i.test(local) ? 'image/png' : /\.pdf$/i.test(local) ? 'application/pdf' : 'image/jpeg';
       const id = 'att-' + String(l.otherUid);
-      files.set(id, new Blob([data], { type }));
+      files.set(id, new Blob([new Uint8Array(data)], { type }));
       tx.attachments = [...(tx.attachments ?? []), { id, name: local, type, size: data.length }];
     }
   }

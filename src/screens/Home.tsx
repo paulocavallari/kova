@@ -14,6 +14,7 @@ import { goTx } from './Transactions';
 import { upcomingBills } from '../lib/reminders';
 import { ShortcutStrip } from '../components/Shortcuts';
 import { PendingCard } from '../components/NotifUI';
+import { PluggyHomeShortcut } from '../components/PluggyUI';
 
 export function Home() {
   const s = useStore();
@@ -237,6 +238,7 @@ export function Home() {
       )}
 
       <PendingCard />
+      <PluggyHomeShortcut />
 
       {(bills.length > 0 || planned.length > 0) && (
         <>

@@ -2,14 +2,15 @@
   "name": "kova",
   "version": "1.8.5",
   "private": true,
-  "description": "Kova \u2014 a beautiful, private, offline personal finance app for Android (English & Portugu\u00eas).",
+  "description": "Kova — a beautiful, private, offline personal finance app for Android (English & Português).",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --dev && npx serve dist",
     "typecheck": "tsc --noEmit",
-    "android:sync": "npm run build && npx cap sync android"
+    "android:sync": "npm run build && npx cap sync android",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",
@@ -32,6 +33,7 @@
     "esbuild": "^0.25.0",
     "sharp": "^0.34.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "jsdom": "^31.0.0"
   }
 }
