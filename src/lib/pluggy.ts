@@ -39,6 +39,13 @@ export interface PluggyTx {
   date: string;
   categoryId?: string;
   status?: string;
+  billId?: string;
+  billForecastDate?: string;
+  installmentNumber?: number;
+  totalInstallments?: number;
+  purchaseDate?: string;
+  currencyCode?: string;
+  amountInAccountCurrency?: number;
 }
 const asRecord = (v: unknown, what: string): Record<string, unknown> => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new PluggyError(`pluggy: invalid ${what}`);
@@ -91,7 +98,24 @@ function parseTx(raw: unknown): PluggyTx {
   const r = asRecord(raw, 'transaction');
   need(typeof r.id === 'string' && !!r.id && typeof r.amount === 'number' && Number.isFinite(r.amount), 'pluggy: invalid transaction');
   need(typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r.date), 'pluggy: invalid transaction');
+  const meta = r.creditCardMetadata && typeof r.creditCardMetadata === 'object' && !Array.isArray(r.creditCardMetadata) ? r.creditCardMetadata as Record<string, unknown> : {};
+  const billId = str(meta.billId);
+  const forecast = str(meta.billForecastDate);
+  const currency = str(r.currencyCode);
+  const accountAmount = r.amountInAccountCurrency;
+  const total = meta.totalInstallments;
+  const number = meta.installmentNumber;
+  const validTotal = typeof total === 'number' && Number.isInteger(total) && total >= 2 && total <= 120;
+  const validNumber = validTotal && typeof number === 'number' && Number.isInteger(number) && number >= 1 && number <= (total as number);
+  const purchase = str(meta.purchaseDate);
   return {
+    billId: billId && billId.length <= 64 ? billId : undefined,
+    billForecastDate: forecast && /^\d{4}-(0[1-9]|1[0-2])$/.test(forecast) ? forecast : undefined,
+    installmentNumber: validNumber ? number as number : undefined,
+    totalInstallments: validNumber ? total as number : undefined,
+    purchaseDate: purchase ? billCivilDate(purchase) ?? undefined : undefined,
+    currencyCode: currency && currency.length <= 8 ? currency.toUpperCase() : undefined,
+    amountInAccountCurrency: typeof accountAmount === 'number' && Number.isFinite(accountAmount) && accountAmount >= 0 ? accountAmount : undefined,
     id: r.id as string,
     description: str(r.description),
     amount: r.amount as number,
@@ -293,6 +317,12 @@ interface Leg {
   desc: string;
   role: LegRole;
   dir: 'out' | 'in';
+  billId?: string;
+  billForecastDate?: string;
+  billCents?: number;
+  installmentNumber?: number;
+  totalInstallments?: number;
+  purchaseDate?: string;
 }
 const CARD_OPS = new Set(['PAGAMENTO', 'PAGAMENTO_FATURA', 'PAGAMENTO DE FATURA']);
 const UTILITY_WORDS = ['energia', 'agua', 'gas', 'internet', 'telefone', 'celular', 'condominio', 'iptu', 'luz', 'saneamento', 'conta de'];
@@ -314,7 +344,16 @@ function normalizeLeg(apiId: string, account: Account, tx: PluggyTx): Leg | null
   const op = tx.operationType ?? '';
   const base = { apiId, txId: tx.id, accountId: account.id, currency: account.currency, cents, date: tx.date, op, desc: tx.description ?? '' };
   if (account.pluggy?.type === 'CREDIT') {
+    const billCents = !tx.currencyCode
+      ? undefined
+      : tx.currencyCode === account.currency
+        ? cents
+        : tx.amountInAccountCurrency === undefined
+          ? undefined
+          : Math.round(Math.abs(tx.amountInAccountCurrency) * 100);
+    Object.assign(base, { billId: tx.billId, billForecastDate: tx.billForecastDate, billCents, installmentNumber: tx.installmentNumber, totalInstallments: tx.totalInstallments, purchaseDate: tx.purchaseDate });
     if (op === 'ESTORNO' || op === 'CASHBACK') return { ...base, role: 'regular', dir: 'in' };
+    if (tx.type === 'DEBIT' && tx.amount > 0) return { ...base, role: 'regular', dir: 'out' };
     if (CARD_OPS.has(op) || tx.amount < 0) return { ...base, role: 'card', dir: 'in' };
     return { ...base, role: 'regular', dir: 'out' };
   }
@@ -361,7 +400,7 @@ function existingLegs(state: State): { legs: Leg[]; manualTxs: Tx[]; manualTrans
       manualTxs.push(tx);
       continue;
     }
-    legs.push({ apiId: tx.pluggy.apiId, txId: tx.pluggy.txId, accountId: tx.accountId, currency: currencyOf(state, tx.accountId), cents: tx.amount, date: tx.date, op: tx.pluggy.op, desc: tx.note, role: 'regular', dir: tx.kind === 'income' ? 'in' : 'out' });
+    legs.push({ apiId: tx.pluggy.apiId, txId: tx.pluggy.txId, accountId: tx.accountId, currency: currencyOf(state, tx.accountId), cents: tx.amount, billId: tx.pluggy.billId, billForecastDate: tx.pluggy.billForecastDate, billCents: tx.pluggy.billCents, installmentNumber: tx.pluggy.installmentNumber, totalInstallments: tx.pluggy.totalInstallments, purchaseDate: tx.pluggy.purchaseDate, date: tx.date, op: tx.pluggy.op, desc: tx.note, role: 'regular', dir: tx.kind === 'income' ? 'in' : 'out' });
   }
   for (const tr of state.transfers) {
     if (!tr.pluggy) {
@@ -412,7 +451,12 @@ const legacyAutoName = (item: PluggyItem, conn: PluggyConn): string => {
   return label && fold(label) !== fold(conn.name) ? `${label} · ${conn.name}` : conn.name;
 };
 function ensureAccount(state: State, conn: PluggyConn, item: PluggyItem, remote: PluggyAccount): { state: State; account: Account } {
-  const found = state.accounts.find((a) => a.pluggy?.apiId === conn.id && a.pluggy.accountId === remote.id);
+  let found = state.accounts.find((a) => a.pluggy?.apiId === conn.id && a.pluggy.accountId === remote.id);
+  if (found && found.pluggy!.itemId !== item.id) {
+    found = { ...found, pluggy: { ...found.pluggy!, itemId: item.id } };
+    const linked = found;
+    state = { ...state, accounts: state.accounts.map((a) => a.id === linked.id ? linked : a) };
+  }
   const remoteName = cleanName(remote.name);
   if (found) {
     if (!remoteName) return { state, account: found };
@@ -442,7 +486,7 @@ function ensureAccount(state: State, conn: PluggyConn, item: PluggyItem, remote:
     includeInTotal: true,
     archived: false,
     order: state.accounts.length,
-    pluggy: { apiId: conn.id, accountId: remote.id, type: remote.type, lastAutoName: name },
+    pluggy: { apiId: conn.id, accountId: remote.id, type: remote.type, itemId: item.id, lastAutoName: name },
   };
   return { state: { ...state, accounts: [...state.accounts, account] }, account };
 }
@@ -462,7 +506,7 @@ function txFromLeg(leg: Leg, state: State, existing: Map<string, Tx>): Tx {
     note: prev?.note ?? leg.desc,
     tags: prev?.tags ?? [],
     created: prev?.created ?? `${leg.date}T12:00:00.000Z`,
-    pluggy: { apiId: leg.apiId, txId: leg.txId, op: leg.op },
+    pluggy: { apiId: leg.apiId, txId: leg.txId, op: leg.op, billId: leg.billId, billForecastDate: leg.billForecastDate, billCents: leg.billCents, installmentNumber: leg.installmentNumber, totalInstallments: leg.totalInstallments, purchaseDate: leg.purchaseDate },
   };
 }
 function transferFromPair(pair: { a: Leg; b: Leg; kind: LegRole }): Transfer {
@@ -508,7 +552,14 @@ function applyFetched(state: State, conn: PluggyConn, folders: Folder[], now: nu
   for (const f of folders) {
     const created = ensureAccount(next, conn, f.item, f.acc);
     next = created.state;
-    const account = created.account;
+    let account = created.account;
+    if (f.acc.type === 'CREDIT') {
+      const forecastGap = f.txs.some((t) => t.status === 'PENDING' && t.type === 'DEBIT'
+        && Math.round(t.amount * 100) > 0 && !t.billId && !t.billForecastDate);
+      account = { ...account, pluggy: { ...account.pluggy!, forecastGap } };
+      const updated = account;
+      next = { ...next, accounts: next.accounts.map((a) => a.id === updated.id ? updated : a) };
+    }
     targets.set(account.id, f.acc.type === 'CREDIT' ? -Math.round(Math.abs(f.acc.balance) * 100) : Math.round(f.acc.balance * 100));
     for (const t of f.txs) {
       const leg = normalizeLeg(conn.id, account, t);
@@ -588,6 +639,12 @@ function checkpoint(conn: PluggyConn, accountId: string, now: number): string {
   if (saved && Number.isFinite(Date.parse(saved))) return addDays(saved.slice(0, 10), -1);
   return new Date(now - 365 * 864e5).toISOString().slice(0, 10);
 }
+function cardCheckpoint(conn: PluggyConn, accountId: string, now: number): string {
+  const saved = conn.accountSync?.[`${conn.id}|${accountId}`];
+  if (!saved || !Number.isFinite(Date.parse(saved))) return checkpoint(conn, accountId, now);
+  const minimum = new Date(now - 45 * 864e5).toISOString().slice(0, 10);
+  return checkpoint(conn, accountId, now) < minimum ? checkpoint(conn, accountId, now) : minimum;
+}
 /** Fetches every item/account of one connection without touching State. */
 async function collectPluggy(conn: PluggyConn, opts: SyncOptions): Promise<Collected> {
   const folders: Folder[] = [];
@@ -616,7 +673,7 @@ async function collectPluggy(conn: PluggyConn, opts: SyncOptions): Promise<Colle
       const itemFolders: Folder[] = [];
       for (const acc of accounts) {
         try {
-          const txs = await client.transactions(acc.id, checkpoint(conn, acc.id, now));
+          const txs = await client.transactions(acc.id, acc.type === 'CREDIT' ? cardCheckpoint(conn, acc.id, now) : checkpoint(conn, acc.id, now));
           itemFolders.push({ item, acc, txs });
         } catch (e) {
           itemOk = false;

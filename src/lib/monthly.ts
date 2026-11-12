@@ -40,14 +40,14 @@ function rateTo(state: State, from: string, to: string): number | null {
   return (fromBase as number) / (toBase as number);
 }
 
-function convert(state: State, cents: number, from: string, to: string): number | null {
+export function convert(state: State, cents: number, from: string, to: string): number | null {
   const rate = rateTo(state, from, to);
   if (rate === null) return null;
   const value = Math.round(cents * rate);
   return Number.isSafeInteger(value) ? value : null;
 }
 
-const safeAdd = (a: number, b: number): number | null => {
+export const safeAdd = (a: number, b: number): number | null => {
   const value = a + b;
   return Number.isSafeInteger(value) ? value : null;
 };

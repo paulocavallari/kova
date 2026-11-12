@@ -221,6 +221,13 @@ input, textarea { user-select: text; }
 .item .s { color: var(--muted); font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
 .item .amt { font-family: var(--display); font-weight: 700; font-size: 15.5px; white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .item .amt2 { color: var(--muted); font-size: 12.5px; text-align: right; white-space: nowrap; margin-top: 2px; }
+.acc-row .item > .grow { min-width: 90px; }
+.acc-row .item .right { min-width: 0; max-width: 55%; }
+.acc-row .item .amt2.meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 419px) {
+  .acc-row .item { flex-wrap: wrap; }
+  .acc-row .item .right { flex-basis: 100%; max-width: 100%; order: 2; }
+}
 .item.planned .t, .item.planned .amt { opacity: .7; }
 .pos { color: var(--inc); }
 .neg { color: var(--ink); }

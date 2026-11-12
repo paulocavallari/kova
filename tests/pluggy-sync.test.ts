@@ -858,3 +858,24 @@ test('documental bill datetime without timezone is accepted and cached fresh', a
   assert.equal(cache?.status, 'fresh');
   assert.deepEqual(cache?.items.map((b) => ({ id: b.id, dueDate: b.dueDate, amountCents: b.amountCents })), [{ id: 'doc', dueDate: '2023-07-20', amountCents: 1025 }]);
 });
+
+test('positive DEBIT PAGAMENTO purchase remains an expense across syncs and cannot pair', async () => {
+  const net = makeNet({
+    'http://a.test': api('a', [{ id: 'ia', name: 'Banco', accounts: [
+      { account: bank('bank1', 0), txs: [tx('bank-pay', -72.30, '2026-11-05', { type: 'DEBIT', operationType: 'PAGAMENTO_FATURA' })] },
+      { account: card('card1', 0), txs: [tx('buy-pay', 72.30, '2026-11-05', { type: 'DEBIT', operationType: 'PAGAMENTO', description: 'Compra' })] },
+    ] }]),
+  });
+  let s = mkState([conn('a', 'http://a.test', ['ia'])]);
+  for (let i = 0; i < 3; i++) {
+    const run = await runAll(s, { now, fetchImpl: net.fetchImpl });
+    s = run.state;
+    assert.equal(run.result.errors.length, 0);
+    const purchases = s.txs.filter((t) => t.pluggy?.txId === 'buy-pay');
+    assert.equal(purchases.length, 1);
+    assert.equal(purchases[0].kind, 'expense');
+    assert.equal(purchases[0].amount, 7230);
+    assert.equal((s.pluggy?.[0].pending ?? []).some((p) => p.txId === 'buy-pay'), false);
+    assert.equal(s.transfers.filter((t) => t.pluggy).length, 0);
+  }
+});

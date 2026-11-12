@@ -4,6 +4,9 @@ import { setState, useBalances, useStore } from '../lib/store';
 import { useT } from '../i18n';
 import { accountsSorted, toBase } from '../lib/calc';
 import { monthlyProjection } from '../lib/monthly';
+import { nextCycles, openBills, openMonthLabel } from '../lib/open-bill';
+import { openOverlay } from '../lib/nav';
+import { Sheet } from '../components/ui';
 import { MonthlyToggle } from '../components/MonthlyToggle';
 import { useToday } from '../lib/useToday';
 import { money } from '../lib/format';
@@ -26,6 +29,8 @@ export function Accounts() {
   const base = s.settings.baseCurrency;
   const day = useToday();
   const monthlyOn = s.settings.monthlyCardView !== false;
+  const open = useMemo(() => openBills(s, undefined, day), [s, day]);
+  const cycles = useMemo(() => nextCycles(s, undefined, day), [s, day]);
   const monthly = useMemo(() => monthlyProjection(s, undefined, day), [s, day]);
 
   const positive = active.filter((a) => a.includeInTotal).map((a) => ({ a, v: Math.max(toBase(s, bal.get(a.id) ?? 0, a.currency), 0) })).filter((p) => p.v > 0).sort((x, y) => y.v - x.v);
@@ -38,8 +43,30 @@ export function Accounts() {
     const a = s.accounts.find((x) => x.id === id)!;
     const v = bal.get(a.id) ?? 0;
     const cardRow = monthlyOn ? monthly.cards.find((c) => c.accountId === a.id) : undefined;
+    const openRow = monthlyOn ? open.find((c) => c.accountId === a.id) : undefined;
+    const origin = openRow?.originAt
+      ? t('cardOpenBillFrom', { d: new Date(openRow.originAt).toLocaleDateString(locale) })
+      : openRow?.syncedAt
+        ? `${t('cardOpenBillCollected', { d: new Date(openRow.syncedAt).toLocaleDateString(locale) })} · ${t('cardOpenBillUnknown')}`
+        : t('cardOpenBillUnknown');
     const cardMissing = cardRow?.status === 'missing' || cardRow?.status === 'negative' || (!!cardRow && cardRow.amount === null);
     const foreign = a.currency !== base;
+    const nextRows = monthlyOn ? cycles.filter((c) => c.accountId === a.id) : [];
+    const showNext = () => openOverlay(() => (
+      <Sheet title={t('cardNextBills')}>
+        {nextRows.map((c) => (
+          <div className="item" key={c.cycle} style={{ borderTop: 0 }}>
+            <div className="grow">
+              <div className="t">{openMonthLabel(c.cycle, locale)}</div>
+              {c.published && <div className="s meta">{t('cardNextBillsNote')} · {c.published.count}</div>}
+              {c.installments && <div className="s meta">{t('cardInstallmentsRemaining')}: {money(c.installments.cents, a.currency, locale)} ({c.installments.count})</div>}
+              {c.subscriptions && <div className="s meta">{t('cardSubscriptionsLikely')}: {money(c.subscriptions.cents, a.currency, locale)} ({c.subscriptions.count})</div>}
+            </div>
+            {c.published && <div className="right amt">{c.published.native === null ? t('cardUnavailable') : money(-c.published.native, a.currency, locale)}</div>}
+          </div>
+        ))}
+      </Sheet>
+    ));
     return (
       <div className="row" key={a.id} style={{ gap: 0 }}>
         <button className="item grow" onClick={() => { if (!edit) navigate(`/tx?acc=${a.id}`); }} style={{ borderTop: 0 }}>
@@ -52,10 +79,17 @@ export function Accounts() {
             <div className="amt" style={cardRow && !cardMissing ? { color: 'var(--exp)' } : v < 0 ? { color: 'var(--exp)' } : undefined}>
               {hide ? '••••••' : cardRow ? (cardMissing || cardRow.amount === null ? t('cardUnavailable') : money(-cardRow.amount, a.currency, locale)) : money(v, a.currency, locale)}
             </div>
-            {cardRow && !cardMissing && <div className="amt2">{cardRow.source === 'manual' ? t('cardManualMonth') : t('cardBillMonth')}{cardRow.status !== 'fresh' ? ` · ${cardRow.fetchedAt ? t('monthlyStaleNotice', { d: new Date(cardRow.fetchedAt).toLocaleString(locale) }) : t('monthlyStale')}` : ''}</div>}
+            {cardRow && !cardMissing && <div className="amt2 meta">{cardRow.source === 'manual' ? t('cardManualMonth') : t('cardBillMonth')}{cardRow.status !== 'fresh' ? ` · ${cardRow.fetchedAt ? t('monthlyStaleNotice', { d: new Date(cardRow.fetchedAt).toLocaleString(locale) }) : t('monthlyStale')}` : ''}</div>}
+            {openRow && (openRow.status === 'open' || openRow.status === 'partial') && openRow.native !== null && openRow.native > 0 && !hide && <>
+              <div className="amt2">{money(-openRow.native, a.currency, locale)}</div>
+              <div className="amt2 meta">{t('cardOpenBill', { m: openMonthLabel(openRow.cycle, locale) })}</div>
+              {openRow.status === 'partial' && <div className="amt2 meta">{t('cardOpenBillPartial')}</div>}
+              <div className="amt2 meta">{origin}{!openRow.syncOk ? ` · ${t('cardOpenBillFailed')}` : ''}</div>
+            </>}
             {!cardRow && foreign && !hide && <div className="amt2">≈ {money(toBase(s, v, a.currency), base, locale)}</div>}
           </div>
         </button>
+        {nextRows.length >= 2 && !edit && <button className="small link" style={{ padding: '0 16px 10px' }} onClick={showNext}>{t('cardNextBills')}</button>}
         {edit && !a.archived && <span className="handle"><PiDotsSixVerticalBold /></span>}
       </div>
     );

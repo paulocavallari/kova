@@ -11,7 +11,7 @@ export interface Account {
   archived: boolean;
   order: number;
   note?: string;
-  pluggy?: { apiId: string; accountId: string; type: string; lastAutoName?: string; nameCustomized?: boolean; bills?: PluggyBillsCache };
+  pluggy?: { apiId: string; accountId: string; type: string; itemId?: string; forecastGap?: boolean; lastAutoName?: string; nameCustomized?: boolean; bills?: PluggyBillsCache };
 }
 export interface PluggyBill {
   id: string;
@@ -53,7 +53,7 @@ export interface Tx {
   attachments?: Attachment[];
   src?: 'notif'; // created from a bank notification
   nid?: string; // id of that detection
-  pluggy?: { apiId: string; txId: string; op: string };
+  pluggy?: { apiId: string; txId: string; op: string; billId?: string; billForecastDate?: string; billCents?: number; installmentNumber?: number; totalInstallments?: number; purchaseDate?: string };
 }
 export interface Attachment {
   id: string; // key of the file in IndexedDB
