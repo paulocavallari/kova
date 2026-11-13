@@ -20,7 +20,7 @@ export function idb(): Promise<IDBDatabase> {
     r.onerror = () => rej(r.error);
   });
 }
-async function idbGet<T>(key: string): Promise<T | undefined> {
+export async function idbGet<T>(key: string): Promise<T | undefined> {
   const db = await idb();
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
@@ -28,7 +28,7 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
     tx.onerror = () => rej(tx.error);
   });
 }
-async function idbSet(key: string, val: unknown) {
+export async function idbSet(key: string, val: unknown) {
   const db = await idb();
   return new Promise<void>((res, rej) => {
     const tx = db.transaction(STORE, 'readwrite');

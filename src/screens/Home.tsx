@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PiEyeBold, PiEyeSlashBold, PiCaretDownBold, PiCheckBold, PiArrowsClockwiseBold, PiListBulletsBold, PiChartLineUpBold, PiArrowDownLeftBold, PiArrowUpRightBold, PiPiggyBankBold, PiReceiptBold, PiCaretRightBold, PiBellRingingFill } from 'react-icons/pi';
+import { PiEyeBold, PiEyeSlashBold, PiCaretDownBold, PiCheckBold, PiArrowsClockwiseBold, PiListBulletsBold, PiChartLineUpBold, PiArrowDownLeftBold, PiArrowUpRightBold, PiPiggyBankBold, PiReceiptBold, PiCaretRightBold, PiBellRingingFill, PiChatCircleDotsBold } from 'react-icons/pi';
 import type { Kind, Tx } from '../lib/types';
 import { setState, useBalances, useStore } from '../lib/store';
 import { useT } from '../i18n';
@@ -157,6 +157,9 @@ export function Home() {
             <PiCaretDownBold className="caret" />
           </button>
           <div className="grow" />
+          <button className="eye glass" onClick={() => navigate('/chat')} aria-label={t('chatTitle')}>
+            <PiChatCircleDotsBold />
+          </button>
           <button className="eye glass" onClick={() => setState((st) => ({ ...st, settings: { ...st.settings, hideBalance: !st.settings.hideBalance } }))} aria-label="hide balance">
             {hide ? <PiEyeSlashBold /> : <PiEyeBold />}
           </button>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PiUserDuotone, PiTranslateDuotone, PiPaletteDuotone, PiCurrencyCircleDollarDuotone, PiArrowsClockwiseBold, PiEyeSlashDuotone, PiCalendarDuotone, PiDownloadSimpleDuotone, PiFileCsvDuotone, PiTrashDuotone, PiHeartDuotone, PiCaretRightBold, PiTagDuotone, PiSwapDuotone, PiCloudCheckDuotone, PiHashDuotone, PiReceiptDuotone, PiShareNetworkDuotone, PiClockCounterClockwiseDuotone, PiVibrateDuotone, PiSquareHalfBottomDuotone, PiSquaresFourDuotone, PiChatTextDuotone, PiMagnifyingGlassBold, PiLockKeyDuotone, PiFingerprintDuotone, PiLightningDuotone } from 'react-icons/pi';
+import { PiUserDuotone, PiTranslateDuotone, PiPaletteDuotone, PiCurrencyCircleDollarDuotone, PiArrowsClockwiseBold, PiEyeSlashDuotone, PiCalendarDuotone, PiDownloadSimpleDuotone, PiFileCsvDuotone, PiTrashDuotone, PiHeartDuotone, PiCaretRightBold, PiTagDuotone, PiSwapDuotone, PiCloudCheckDuotone, PiHashDuotone, PiReceiptDuotone, PiShareNetworkDuotone, PiClockCounterClockwiseDuotone, PiVibrateDuotone, PiSquareHalfBottomDuotone, PiSquaresFourDuotone, PiChatTextDuotone, PiMagnifyingGlassBold, PiLockKeyDuotone, PiFingerprintDuotone, PiLightningDuotone, PiSparkleDuotone, PiChatCircleDotsBold } from 'react-icons/pi';
 import type { State } from '../lib/types';
 import { getState, replaceState, setState, useStore, backupNow } from '../lib/store';
 import { useT } from '../i18n';
@@ -13,6 +13,8 @@ import { PinSheet, setPin } from '../components/Lock';
 import { ShortcutsSheet } from '../components/Shortcuts';
 import { NotifSettingsSheet } from '../components/NotifUI';
 import { PluggySettingsSheet } from '../components/PluggyUI';
+import { AiSettingsSheet } from '../components/AiUI';
+import { clearAiKey } from '../lib/ai-config';
 import { biometricAvailable } from '../native';
 
 declare const __APP_VERSION__: string;
@@ -151,6 +153,11 @@ export function Settings() {
   };
   const erase = async () => {
     if (!(await confirmDialog(t('confirmErase'), t('eraseAll'), t('cancel')))) return;
+    try {
+      await clearAiKey();
+    } catch {
+      toast(t('aiKeyKept'));
+    }
     const fresh = initialState(detectLang());
     replaceState({ ...fresh, settings: { ...fresh.settings, lang: st.lang, theme: st.theme } });
   };
@@ -306,6 +313,20 @@ export function Settings() {
         <button className="setting" onClick={() => openOverlay(() => <PluggySettingsSheet />)}>
           <Ico><PiLightningDuotone /></Ico>
           <div className="grow"><div className="t">{t('pluggyTitle')}</div><div className="s">{t('pluggyD')}</div></div>
+          <PiCaretRightBold className="muted" />
+        </button>
+      </div>
+
+      <div className="section-title">{t('aiTitle')}</div>
+      <div className="paper flush">
+        <button className="setting" onClick={() => openOverlay((close) => <AiSettingsSheet onDone={close} />)}>
+          <Ico><PiSparkleDuotone /></Ico>
+          <div className="grow"><div className="t">{t('aiTitle')}</div><div className="s">{st.ai?.model || t('aiD')}</div></div>
+          <PiCaretRightBold className="muted" />
+        </button>
+        <button className="setting" onClick={() => navigate('/chat')}>
+          <Ico><PiChatCircleDotsBold /></Ico>
+          <div className="grow"><div className="t">{t('chatTitle')}</div></div>
           <PiCaretRightBold className="muted" />
         </button>
       </div>

@@ -12,6 +12,7 @@ import { Categories } from './screens/Categories';
 import { Settings, runMmImport, updateRates, restoreFromFile } from './screens/Settings';
 import { Transactions } from './screens/Transactions';
 import { Bills } from './screens/Bills';
+import { Chat } from './screens/Chat';
 import { setStatusBar, setHaptics, takeCrashNote, listAutoBackups, readAutoBackup, initDeepLinks, type BackupEntry } from './native';
 import { launchShortcut } from './components/Shortcuts';
 import { LockScreen } from './components/Lock';
@@ -135,6 +136,7 @@ function Main() {
   else if (path === '/settings') screen = <Settings />;
   else if (path === '/tx') screen = <Transactions key={r.query.toString()} />;
   else if (path === '/bills') screen = <Bills />;
+  else if (path === '/chat') screen = <Chat />;
   else screen = <Home />;
 
   const tabs = [

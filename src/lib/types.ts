@@ -75,6 +75,12 @@ export interface Transfer {
 }
 export type Theme = 'system' | 'light' | 'dark';
 export type Lang = 'auto' | 'en' | 'pt';
+export type AiEffort = 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export interface AiConfig {
+  baseUrl: string;
+  model: string;
+  effort: AiEffort;
+}
 export interface Settings {
   name: string;
   baseCurrency: string;
@@ -101,6 +107,7 @@ export interface Settings {
   haptics?: boolean; // vibrate on taps (default on)
   showTags?: boolean; // tags field in the transaction editor (default on)
   monthlyCardView?: boolean; // cards by invoice due this month and monthly result (default on)
+  ai?: AiConfig;
 }
 export interface State {
   version: 1;
