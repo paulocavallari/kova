@@ -215,3 +215,13 @@ test('simulatePurchase extends horizon up to 36 and separates turnsNegative vs a
     assert.equal(flip.summary.worstMonth?.month, '2027-01');
   }
 });
+
+test('card with a one-month offset puts the open purchases in the due month of the forecast', () => {
+  const s = baseState();
+  addPluggyCard(s, 'card-1', [{ id: 'b1', dueDate: '2026-09-10', amountCents: 50_000 }, { id: 'b2', dueDate: '2026-10-10', amountCents: 60_000 }]);
+  const linked = (id: string, bill: string, forecast: string, k: number) => ({ id: `${id}${k}`, kind: 'expense' as const, accountId: 'card-1', categoryId: 'shopping', amount: 100, base: 100, date: '2026-09-05', note: 'Loja Alfa', tags: [], created: '2026-09-05T00:00:00Z', pluggy: { apiId: 'api-1', txId: `${id}${k}`, op: 'BUY', billId: bill, billForecastDate: forecast, billCents: 100 } });
+  const open = (id: string, forecast: string, cents: number) => ({ ...linked(id, '', forecast, 0), id, amount: cents, base: cents, pluggy: { apiId: 'api-1', txId: id, op: 'BUY', billForecastDate: forecast, billCents: cents } });
+  s.txs.push(...[0, 1, 2, 3].flatMap((k) => [linked('x', 'b1', '2026-08', k), linked('y', 'b2', '2026-09', k)]), open('o1', '2026-10', 70_000), open('o2', '2026-11', 80_000));
+  const out = buildOutlook(s, '2026-11-12', 3);
+  assert.deepEqual(out.map((r) => [r.month, r.basis, r.cardForecast]), [['2026-11', 'forecast', 70_000], ['2026-12', 'forecast', 80_000], ['2027-01', 'none', 0]]);
+});

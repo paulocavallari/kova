@@ -164,3 +164,30 @@ test('real merchant prefixes with a space before the asterisk form one series', 
   const rows = likelySubscriptions(s, 'card', '2026-11-12');
   assert.deepEqual(rows.map((r) => [r.cents, r.cycle]).sort(), [[1990, '2026-12'], [4090, '2026-12']].sort());
 });
+
+// Cartão com deslocamento de um mês: a previsão da Pluggy cai no mês da compra e a fatura vence no seguinte.
+const lateBills = ['2026-08', '2026-09', '2026-10'].map((c) => bill(`late-${c}`, `${c}-10`));
+const lateLinked = (): Tx[] => lateBills.flatMap((b, i) => [0, 1, 2].map((k) => ({ ...sub(`l${i}${k}`, `LOJA ${i}${k}`, ['2026-07', '2026-08', '2026-09'][i], 1000 + k, b.id) })));
+
+test('open installments follow the calibrated offset of the card', () => {
+  const open = installment('o1', 'PARCELADO', 2, 5, 9000, { cycle: '2026-10', purchase: '2026-09-02' });
+  const rows = remainingInstallments(state([...lateLinked(), open], lateBills), 'card', '2026-11-12');
+  assert.deepEqual(cyclesOf(rows), ['2026-12', '2027-01', '2027-02']);
+});
+
+test('open installments keep the forecast month when the card has no offset', () => {
+  const open = installment('o1', 'PARCELADO', 2, 5, 9000, { cycle: '2026-10', purchase: '2026-09-02' });
+  assert.deepEqual(cyclesOf(remainingInstallments(state([open], []), 'card', '2026-11-12')), ['2026-11', '2026-12', '2027-01']);
+});
+
+test('likely subscriptions land in the due month of the card, not the forecast month', () => {
+  const streaming = ['2026-07', '2026-08', '2026-09'].map((c, i) => sub(`s${i}`, 'STREAMING EXEMPLO', c, 4590, lateBills[i].id));
+  const rows = likelySubscriptions(state([...lateLinked(), ...streaming], lateBills), 'card', '2026-10-20');
+  assert.deepEqual(rows.map((r) => r.cycle), ['2026-11']);
+});
+
+test('an implausible offset (outside 0 to 2 months) is ignored', () => {
+  const far = lateBills.flatMap((b, i) => [0, 1, 2].map((k) => sub(`f${i}${k}`, `LOJA ${i}${k}`, ['2026-03', '2026-04', '2026-05'][i], 1000 + k, b.id)));
+  const open = installment('o1', 'PARCELADO', 2, 5, 9000, { cycle: '2026-10', purchase: '2026-09-02' });
+  assert.deepEqual(cyclesOf(remainingInstallments(state([...far, open], lateBills), 'card', '2026-11-12')), ['2026-11', '2026-12', '2027-01']);
+});

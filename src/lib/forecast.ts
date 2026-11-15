@@ -1,5 +1,5 @@
 import { today } from './calc';
-import type { State, Tx } from './types';
+import type { Account, State, Tx } from './types';
 import { fold } from './calc';
 
 export interface RemainingRow {
@@ -13,10 +13,31 @@ const TOLERANCE_CENTS = 20;
 const TOLERANCE_RATIO = 0.015;
 const sameValue = (a: number, b: number) => Math.abs(a - b) <= Math.max(TOLERANCE_CENTS, TOLERANCE_RATIO * Math.max(a, b));
 
-const addCycle = (cycle: string, months: number) => {
+export const addCycle = (cycle: string, months: number) => {
   const index = Number(cycle.slice(0, 4)) * 12 + Number(cycle.slice(5, 7)) - 1 + months;
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
 };
+
+const monthIndex = (cycle: string) => Number(cycle.slice(0, 4)) * 12 + Number(cycle.slice(5, 7));
+const OFFSET_MIN = 8;
+const OFFSET_SHARE = 0.8;
+const OFFSET_MAX = 2;
+/** Months between a bill's due month and the billForecastDate of its transactions, calibrated per card on its published bills. */
+export function billOffset(account: Account, txs: Tx[]): number {
+  const dueOf = new Map((account.pluggy?.bills?.items ?? []).map((bill) => [bill.id, bill.dueDate.slice(0, 7)]));
+  const counts = new Map<number, number>();
+  let n = 0;
+  for (const tx of txs) {
+    const pluggy = tx.pluggy;
+    const due = tx.accountId === account.id && pluggy?.billId ? dueOf.get(pluggy.billId) : undefined;
+    if (!due || !pluggy?.billForecastDate || !/^\d{4}-(0[1-9]|1[0-2])$/.test(pluggy.billForecastDate)) continue;
+    const gap = monthIndex(due) - monthIndex(pluggy.billForecastDate);
+    counts.set(gap, (counts.get(gap) ?? 0) + 1);
+    n++;
+  }
+  const [gap, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [0, 0];
+  return n >= OFFSET_MIN && count / n >= OFFSET_SHARE && gap >= 0 && gap <= OFFSET_MAX ? gap : 0;
+}
 
 interface Plan {
   total: number;
@@ -44,13 +65,13 @@ function plansOf(txs: Tx[]): Plan[] {
   return plans;
 }
 
-function projectPlan(plan: Plan, cycleOfBill: Map<string, string>): { cycle: string; cents: number }[] {
+function projectPlan(plan: Plan, cycleOfBill: Map<string, string>, offset: number): { cycle: string; cents: number }[] {
   const numbers = plan.items.map((tx) => tx.pluggy!.installmentNumber!);
   if (new Set(numbers).size !== numbers.length) return [];
   const last = plan.items.reduce((a, b) => (b.pluggy!.installmentNumber! > a.pluggy!.installmentNumber! ? b : a));
   const lastNumber = last.pluggy!.installmentNumber!;
   if (lastNumber >= plan.total) return [];
-  const base = last.pluggy!.billId ? cycleOfBill.get(last.pluggy!.billId) : last.pluggy!.billForecastDate;
+  const base = last.pluggy!.billId ? cycleOfBill.get(last.pluggy!.billId) : last.pluggy!.billForecastDate && addCycle(last.pluggy!.billForecastDate, offset);
   if (!base) return [];
   const cents = last.pluggy!.billCents ?? last.amount;
   return Array.from({ length: plan.total - lastNumber }, (_, i) => ({ cycle: addCycle(base, i + 1), cents }));
@@ -64,9 +85,10 @@ export function remainingInstallments(state: State, accountId?: string, day = to
     const items = account.pluggy.bills?.items ?? [];
     const cycleOfBill = new Map(items.map((bill) => [bill.id, bill.dueDate.slice(0, 7)]));
     const published = new Set(items.map((bill) => bill.dueDate.slice(0, 7)));
+    const offset = billOffset(account, state.txs);
     const txs = state.txs.filter((tx) => tx.accountId === account.id && tx.kind === 'expense' && tx.pluggy?.installmentNumber !== undefined && tx.pluggy.totalInstallments !== undefined && tx.pluggy.purchaseDate !== undefined);
     for (const plan of plansOf(txs)) {
-      for (const { cycle, cents } of projectPlan(plan, cycleOfBill)) {
+      for (const { cycle, cents } of projectPlan(plan, cycleOfBill, offset)) {
         if (cycle < from || published.has(cycle)) continue;
         const key = `${account.id}|${cycle}`;
         const row = rows.get(key) ?? { accountId: account.id, cycle, cents: 0, count: 0 };
@@ -98,6 +120,7 @@ export function likelySubscriptions(state: State, accountId?: string, day = toda
   for (const account of state.accounts) {
     if (account.archived || account.pluggy?.type !== 'CREDIT' || (accountId && account.id !== accountId)) continue;
     const series = new Map<string, Map<string, number>>();
+    const offset = billOffset(account, state.txs);
     for (const tx of state.txs) {
       const pluggy = tx.pluggy;
       if (tx.accountId !== account.id || tx.kind !== 'expense' || !pluggy?.billForecastDate || pluggy.installmentNumber !== undefined) continue;
@@ -113,7 +136,7 @@ export function likelySubscriptions(state: State, accountId?: string, day = toda
       if (last > current || last < addCycle(current, -1)) continue;
       const window = [addCycle(last, -2), addCycle(last, -1), last];
       if (!window.every((c) => byCycle.get(c) === 1)) continue;
-      const next = addCycle(last, 1);
+      const next = addCycle(last, 1 + offset);
       if (published.has(next)) continue;
       rows.push({ accountId: account.id, cycle: next, cents: Number(key.split('|')[1]), count: 1 });
     }

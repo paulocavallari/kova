@@ -161,3 +161,46 @@ test('two subscription series in the same cycle are summed, not overwritten', ()
   const nov = nextCycles(s, 'old', '2026-11-12').find((r) => r.cycle === '2026-11');
   assert.deepEqual(nov?.subscriptions, { cents: 6080, count: 2 });
 });
+
+// Cartão com faturas publicadas; cada par [vencimento, previsão] gera 4 lançamentos ligados à fatura, para calibrar o deslocamento.
+function cardWith(id: string, pairs: [string, string][]): { account: Account; txs: Tx[] } {
+  const items = pairs.map(([due]) => ({ id: `${id}-${due}`, dueDate: `${due}-10`, amountCents: 0, currency: 'BRL' }));
+  const account: Account = { ...{ id, name: id, icon: 'cards', color: '', currency: 'BRL', initial: 0, includeInTotal: true, archived: false, order: 0 }, pluggy: { apiId: 'a', accountId: id, type: 'CREDIT', itemId: 'item', bills: { status: 'fresh', fetchedAt: '', items } } };
+  const txs = pairs.flatMap(([due, forecast], i) => [0, 1, 2, 3].map((k) => ({ ...transaction(`${id}-${i}-${k}`, id, forecast, 100), pluggy: { apiId: 'a', txId: `${id}-${i}-${k}`, op: '', billId: `${id}-${due}`, billForecastDate: forecast, billCents: 100 } })));
+  return { account, txs };
+}
+const withOpen = (cards: { account: Account; txs: Tx[] }[], open: [string, string, number][]): State => ({ ...initialState('pt'), accounts: cards.map((c) => c.account), txs: [...cards.flatMap((c) => c.txs), ...open.map(([acc, cycle, cents], i) => transaction(`open-${i}`, acc, cycle, cents))] });
+const cyclesOf = (s: State, id?: string) => openCycles(s, id, '2026-11-12').map((r) => `${r.accountId}:${r.cycle}:${r.native}`);
+const LATE: [string, string][] = [['2026-08', '2026-07'], ['2026-09', '2026-08']];
+const SAME: [string, string][] = [['2026-08', '2026-08'], ['2026-09', '2026-09']];
+
+test('a card whose forecast month precedes the due month is shifted by one month', () => {
+  const s = withOpen([cardWith('late', LATE)], [['late', '2026-10', 700], ['late', '2026-11', 300]]);
+  assert.deepEqual(cyclesOf(s), ['late:2026-11:700', 'late:2026-12:300']);
+});
+
+test('a card whose forecast and due months coincide keeps the cycles unshifted', () => {
+  const s = withOpen([cardWith('same', SAME)], [['same', '2026-11', 700], ['same', '2026-12', 300]]);
+  assert.deepEqual(cyclesOf(s), ['same:2026-11:700', 'same:2026-12:300']);
+});
+
+test('with fewer than 8 linked transactions the offset stays zero', () => {
+  const few = cardWith('few', [['2026-09', '2026-08']]);
+  few.txs = few.txs.slice(0, 3);
+  assert.deepEqual(cyclesOf(withOpen([few], [['few', '2026-11', 700]])), ['few:2026-11:700']);
+});
+
+test('without a dominant offset (under 80%) the cycles stay unshifted', () => {
+  const mixed = cardWith('mixed', [['2026-08', '2026-07'], ['2026-09', '2026-09']]);
+  assert.deepEqual(cyclesOf(withOpen([mixed], [['mixed', '2026-11', 700]])), ['mixed:2026-11:700']);
+});
+
+test('the estimate does not vanish when the card publishes the bill of the forecast month', () => {
+  const published = cardWith('keep', [['2026-09', '2026-08'], ['2026-10', '2026-09'], ['2026-11', '2026-10']]);
+  assert.deepEqual(cyclesOf(withOpen([published], [['keep', '2026-11', 700]])), ['keep:2026-12:700']);
+});
+
+test('each card uses its own offset in the same state', () => {
+  const s = withOpen([cardWith('late', LATE), cardWith('same', SAME)], [['late', '2026-11', 700], ['same', '2026-11', 300]]);
+  assert.deepEqual(cyclesOf(s), ['late:2026-12:700', 'same:2026-11:300']);
+});

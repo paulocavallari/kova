@@ -1,7 +1,7 @@
-import type { State } from './types';
+import type { State, Tx } from './types';
 import { today } from './calc';
 import { convert, safeAdd } from './monthly';
-import { likelySubscriptions, remainingInstallments } from './forecast';
+import { addCycle, billOffset, likelySubscriptions, remainingInstallments } from './forecast';
 
 export interface OpenBillRow {
   accountId: string;
@@ -23,15 +23,17 @@ export function openCycles(state: State, accountId?: string, day = today()): Ope
   for (const account of state.accounts) {
     if (account.archived || account.pluggy?.type !== 'CREDIT' || (accountId && account.id !== accountId)) continue;
     const published = new Set(account.pluggy.bills?.items.map((bill) => bill.dueDate.slice(0, 7)) ?? []);
+    const offset = billOffset(account, state.txs);
+    const dueOf = (tx: Tx) => (tx.pluggy?.billForecastDate && validCycle(tx.pluggy.billForecastDate) ? addCycle(tx.pluggy.billForecastDate, offset) : undefined);
     const candidates = state.txs.filter((tx) => {
-      const cycle = tx.pluggy?.billForecastDate;
-      return tx.accountId === account.id && !tx.pluggy?.billId && !!cycle && validCycle(cycle) && cycle >= day.slice(0, 7) && !published.has(cycle);
+      const cycle = dueOf(tx);
+      return tx.accountId === account.id && !tx.pluggy?.billId && !!cycle && cycle >= day.slice(0, 7) && !published.has(cycle);
     });
-    const cycles = [...new Set(candidates.map((tx) => tx.pluggy!.billForecastDate!))].sort();
+    const cycles = [...new Set(candidates.map((tx) => dueOf(tx)!))].sort();
     const conn = state.pluggy?.find((c) => c.id === account.pluggy!.apiId);
     const origin = account.pluggy.itemId ? conn?.itemUpdatedAt?.[account.pluggy.itemId] : undefined;
     for (const cycle of cycles) {
-      const selected = candidates.filter((tx) => tx.pluggy!.billForecastDate === cycle);
+      const selected = candidates.filter((tx) => dueOf(tx) === cycle);
       let native: number | null = 0;
       for (const tx of selected) {
         const value = tx.pluggy!.billCents;
